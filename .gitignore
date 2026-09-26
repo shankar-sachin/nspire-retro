@@ -1,0 +1,6 @@
+/build/
+*.tns
+*.elf
+*.o
+*.d
+.DS_Store
