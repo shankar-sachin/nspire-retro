@@ -10,7 +10,7 @@ typedef struct {
     Game game;
     Settings settings;
     Screen screen, return_screen;
-    int selection, roster_selection, team_selection, frame;
+    int page, selection, roster_selection, team_selection, frame;
     bool has_career, match_active, save_requested, exit_requested, exit_after_save;
     int notice, notice_ticks; /* 1 saved, 2 failed, 3 funds/limit, 4 updated, 5 recovered */
     uint32_t save_sequence;

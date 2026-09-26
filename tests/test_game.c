@@ -55,7 +55,8 @@ static void test_rules(void) {
 }
 static void test_passes(void) {
     Game g;
-    for (int play = PASS_SLANT; play <= PASS_CROSS; ++play) {
+    for (int play = PASS_SLANT; play < PLAY_COUNT; ++play) {
+        if (!game_is_pass((Play)play)) continue;
         for (int target = 0; target < RECEIVER_COUNT; ++target) {
             start(&g, (Play)play); isolate(&g); g.target = target;
             game_update(&g, &action);
@@ -93,7 +94,7 @@ static void test_movement(void) {
     int old = g.defenders[0].x; game_update(&g, &idle);
     assert(g.defenders[0].x < old && DEFENDER_SPEED < PLAYER_SPEED);
     game_init(&g); Input up = {.up_pressed = true}; game_update(&g, &up);
-    assert(g.selected_play == PASS_CROSS);
+    assert(g.selected_play == PASS_SCREEN);
 }
 static void test_advanced_play(void) {
     Game normal, sprint, rookie, hard;
@@ -129,8 +130,9 @@ static void test_advanced_play(void) {
     for (int i = 0; i < PASS_TICKS; ++i) game_update(&normal, &idle);
     assert(normal.result == RESULT_INCOMPLETE); /* Pressure affects accuracy. */
     start(&normal, PASS_SLANT); normal.ticks = 30;
-    int old_y = normal.defenders[2].y; game_update(&normal, &idle);
-    assert(normal.defenders[2].y < old_y); /* Coverage tracks the high receiver. */
+    normal.defenders[7].y = 60 * FP;
+    int old_y = normal.defenders[7].y; game_update(&normal, &idle);
+    assert(normal.defenders[7].y < old_y); /* Coverage tracks the high receiver. */
 }
 static void test_long_session(void) {
     Game g; uint32_t random = 1; game_init(&g);
@@ -148,8 +150,35 @@ static void test_long_session(void) {
         assert(g.score >= 0 && g.opponent_score >= 0);
     }
 }
+static void test_position_units(void) {
+    Game g; start(&g, PASS_SLANT);
+    assert(game_blocker_count(&g) == 5 && game_defender_count(&g) == 11 && game_receiver_count(&g) == 3);
+    assert(game_receiver_role(2) == ROLE_TE);
+    Input cycle = {.target_pressed = true};
+    game_update(&g, &cycle); assert(g.target == 1);
+    game_update(&g, &cycle); assert(g.target == 2);
+    game_update(&g, &cycle); assert(g.target == 0);
+    int run_effects = 0, pass_effects = 0;
+    for (int seed = 1; seed <= 100; ++seed) {
+        Game weak, strong; game_init(&weak); weak.phase = PHASE_OPPONENT;
+        weak.cpu_spot = 30; weak.cpu_line = 40; weak.cpu_down = 1; weak.rng = (uint32_t)seed;
+        weak.ratings[ROLE_DEF] = weak.ratings[ROLE_DL2] = weak.ratings[ROLE_LB] = weak.ratings[ROLE_DB] = 40;
+        strong = weak;
+        strong.ratings[ROLE_DEF] = strong.ratings[ROLE_DL2] = strong.ratings[ROLE_LB] = strong.ratings[ROLE_DB] = 95;
+        game_update(&weak, &action); game_update(&strong, &action);
+        assert(weak.cpu_pass == strong.cpu_pass);
+        if (weak.cpu_spot != strong.cpu_spot || weak.cpu_event != strong.cpu_event) {
+            if (weak.cpu_pass) ++pass_effects; else ++run_effects;
+        }
+    }
+    assert(run_effects > 0 && pass_effects > 0);
+    start(&g, RUN_DRAW); g.ticks = 100; g.blockers[3] = g.defenders[3]; g.ratings[ROLE_OL2] = 40;
+    Game better = g; better.ratings[ROLE_OL2] = 95;
+    game_update(&g, &idle); game_update(&better, &idle);
+    assert(better.blocked[3] > g.blocked[3]);
+}
 int main(void) {
-    test_rules(); test_passes(); test_movement(); test_advanced_play(); test_long_session();
+    test_position_units(); test_rules(); test_passes(); test_movement(); test_advanced_play(); test_long_session();
     puts("Game rules, passes, movement, and 100000 simulation ticks passed.");
     return 0;
 }

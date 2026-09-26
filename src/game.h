@@ -8,9 +8,9 @@
 #define PX_PER_YARD 6
 #define FIELD_LENGTH (100 * PX_PER_YARD)
 #define FIELD_WIDTH 152
-#define DEFENDER_COUNT 4
-#define RECEIVER_COUNT 2
-#define PLAY_COUNT 4
+#define DEFENDER_COUNT 11
+#define RECEIVER_COUNT 3
+#define PLAY_COUNT 10
 #define GAME_HZ 30
 #define TACKLE_RADIUS 7
 #define PLAYER_SPEED 576
@@ -19,10 +19,10 @@
 #define PASS_TICKS 16
 #define PLAY_LIMIT_TICKS (20 * GAME_HZ)
 #define TOUCHDOWN_POINTS 6
-#define BLOCKER_COUNT 2
+#define BLOCKER_COUNT 5
 
 typedef enum { PHASE_CALL, PHASE_LIVE, PHASE_RESULT, PHASE_OPPONENT, PHASE_BREAK, PHASE_FINAL, PHASE_SPECIAL, PHASE_KICK } Phase;
-typedef enum { RUN_SPLIT, RUN_SWEEP, PASS_SLANT, PASS_CROSS } Play;
+typedef enum { RUN_SPLIT, RUN_SWEEP, PASS_SLANT, PASS_CROSS, RUN_COUNTER, RUN_DRAW, PASS_GO, PASS_OUT, PASS_POST, PASS_SCREEN } Play;
 typedef enum {
     RESULT_NONE, RESULT_TACKLE, RESULT_BOUNDS, RESULT_INCOMPLETE,
     RESULT_FIRST_DOWN, RESULT_TOUCHDOWN, RESULT_DOWNS,
@@ -36,7 +36,7 @@ typedef struct {
     Result result;
     Actor carrier, receivers[RECEIVER_COUNT], defenders[DEFENDER_COUNT];
     Actor ball, throw_start, throw_target;
-    Actor blockers[BLOCKER_COUNT];
+    Actor blockers[BLOCKER_COUNT], support[2];
     int blocked[DEFENDER_COUNT];
     int down, spot, line_to_gain; /* Q8 world pixels, always attacking right */
     int score, drive, turnovers, last_gain; /* last_gain in signed yards */
@@ -51,6 +51,8 @@ typedef struct {
     Phase resume_phase;
     int kick_kind, kick_meter, kick_direction, kick_ticks, kick_distance, kick_return;
     bool pending_pat, kick_touchback;
+    bool postseason, bowl_game, shootout_active, legacy_units, cpu_pass;
+    int shootout_round;
     uint32_t rng;
 } Game;
 void game_init(Game *g);
@@ -58,6 +60,12 @@ void game_start(Game *g, int quarter_seconds, int difficulty, const int ratings[
 void game_kick(Game *g, bool field_goal);
 void game_update(Game *g, const Input *input);
 int game_yards_to_go(const Game *g);
+int game_defender_count(const Game *g);
+int game_receiver_count(const Game *g);
+int game_blocker_count(const Game *g);
+int game_receiver_role(int receiver);
+bool game_is_pass(Play play);
+const char *game_play_description(Play play);
 const char *game_play_name(Play play);
 const char *game_result_name(Result result);
 #endif

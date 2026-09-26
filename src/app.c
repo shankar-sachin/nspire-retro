@@ -1,6 +1,6 @@
 #include "app.h"
 #include <string.h>
-static void navigate(App *a, Screen screen) { a->screen = screen; a->selection = 0; }
+static void navigate(App *a, Screen screen) { a->screen = screen; a->selection = 0; a->page = 0; }
 static void menu(App *a, const Input *in, int count) {
     if (in->up_pressed) a->selection = (a->selection + count - 1) % count;
     if (in->down_pressed) a->selection = (a->selection + 1) % count;
@@ -16,12 +16,14 @@ void app_init(App *a) {
     a->screen = SCREEN_TITLE;
 }
 void app_start_match(App *a) {
-    if (a->season.week >= SEASON_WEEKS) return;
+    int opponent = season_current_opponent(&a->season);
+    if (opponent < 0 || a->match_active) return;
     int ratings[ROSTER_COUNT];
     for (int i = 0; i < ROSTER_COUNT; ++i) ratings[i] = season_effective_rating(&a->season, i);
-    int opponent = season_opponent(a->season.team, a->season.week);
     game_start(&a->game, a->settings.quarter_seconds, a->settings.difficulty, ratings,
         season_team_rating(opponent, a->season.year), a->season.rng ^ (uint32_t)(a->season.week + a->season.year * 100));
+    a->game.postseason = a->season.stage != STAGE_REGULAR;
+    a->game.bowl_game = a->season.stage == STAGE_TI_BOWL;
     a->game.home_team = a->season.team; a->game.away_team = opponent;
     a->match_active = true; a->save_requested = true; navigate(a, SCREEN_MATCH);
 }
@@ -64,7 +66,8 @@ void app_update(App *a, const Input *in) {
         else if (in->action_pressed) switch (a->selection) {
         case 0:
             if (a->match_active) navigate(a, SCREEN_MATCH);
-            else if (a->season.week == SEASON_WEEKS) { season_next(&a->season); updated(a, true); }
+            else if (a->season.stage == STAGE_COMPLETE) { season_next(&a->season); updated(a, true); }
+            else if (season_current_opponent(&a->season) < 0) { season_simulate_round(&a->season); updated(a, true); }
             else app_start_match(a);
             break;
         case 1: a->roster_selection = 0; navigate(a, SCREEN_ROSTER); break;
@@ -76,12 +79,12 @@ void app_update(App *a, const Input *in) {
         break;
     case SCREEN_ROSTER:
         if (in->quit) { navigate(a, SCREEN_HUB); break; }
-        menu(a, in, ROSTER_COUNT); a->roster_selection = a->selection;
+        menu(a, in, ROSTER_COUNT); a->roster_selection = season_roster_role(a->selection);
         if (in->action_pressed) navigate(a, SCREEN_PLAYER);
         break;
     case SCREEN_PLAYER: {
         int role = a->roster_selection;
-        if (in->quit) { navigate(a, SCREEN_ROSTER); a->selection = role; break; }
+        if (in->quit) { navigate(a, SCREEN_ROSTER); a->selection = season_roster_row(role); break; }
         menu(a, in, 5);
         if (a->match_active || !in->action_pressed) break;
         if (a->selection == 0) updated(a, season_train(&a->season, role));
@@ -101,10 +104,17 @@ void app_update(App *a, const Input *in) {
             updated(a, season_release(&a->season, a->roster_selection)); navigate(a, SCREEN_PLAYER);
         }
         break;
-    case SCREEN_SCHEDULE:
-        if (in->quit) navigate(a, SCREEN_HUB);
-        if (in->left_pressed || in->right_pressed || in->action_pressed) a->selection = !a->selection;
+    case SCREEN_SCHEDULE: {
+        if (in->quit) { navigate(a, SCREEN_HUB); break; }
+        if (in->left_pressed || in->right_pressed || in->action_pressed) {
+            a->selection = (a->selection + (in->left_pressed ? 3 : 1)) % 4; a->page = 0;
+        }
+        int pages = a->selection == 0 ? (season_regular_weeks(&a->season) + 7) / 8 :
+            (a->selection == 1 ? (a->season.league_size + 7) / 8 : (a->selection == 2 ? 2 : season_regular_weeks(&a->season)));
+        if (in->up_pressed) a->page = (a->page + pages - 1) % pages;
+        if (in->down_pressed) a->page = (a->page + 1) % pages;
         break;
+    }
     case SCREEN_SETTINGS:
         menu(a, in, 3);
         if (in->quit) { navigate(a, a->return_screen); break; }
