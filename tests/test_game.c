@@ -39,7 +39,10 @@ static void test_rules(void) {
     g.down = 4; g.carrier.x = 100 * YARD; game_update(&g, &idle);
     assert(g.result == RESULT_TOUCHDOWN && g.score == TOUCHDOWN_POINTS);
     game_update(&g, &action);
-    assert(g.score == TOUCHDOWN_POINTS && g.phase == PHASE_OPPONENT);
+    assert(g.score == TOUCHDOWN_POINTS && g.phase == PHASE_KICK);
+    g.kick_meter = 50; game_update(&g, &action);
+    assert(g.score == TOUCHDOWN_POINTS + 1 && g.result == RESULT_EXTRA_POINT);
+    game_update(&g, &action); assert(g.phase == PHASE_OPPONENT);
     start(&g, RUN_SPLIT); g.carrier.x = 0; game_update(&g, &idle);
     assert(g.result == RESULT_SAFETY && g.new_drive);
     start(&g, RUN_SPLIT); g.carrier.y = 0; game_update(&g, &idle);

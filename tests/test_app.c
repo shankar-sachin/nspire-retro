@@ -52,10 +52,12 @@ static void test_clock_and_cpu(void) {
     assert(g.quarter == 3 && g.phase == PHASE_OPPONENT && g.cpu_spot == 25);
     game_update(&g, &action); assert(g.clock_ticks < 90 * GAME_HZ);
     g.clock_ticks = 0; g.quarter = 4; game_update(&g, &action); assert(g.phase == PHASE_FINAL);
-    game_init(&g); game_kick(&g, false); assert(g.result == RESULT_PUNT && g.new_drive);
-    game_update(&g, &action); assert(g.phase == PHASE_OPPONENT && g.cpu_spot == 40);
-    game_init(&g); game_kick(&g, true); assert(g.phase == PHASE_CALL); /* Out of FG range. */
-    g.spot = 90 * YARD; game_kick(&g, true); assert(g.phase == PHASE_RESULT);
+    game_init(&g); game_kick(&g, false); assert(g.phase == PHASE_KICK);
+    g.kick_meter = 50; game_update(&g, &action); assert(g.result == RESULT_PUNT && g.new_drive);
+    game_update(&g, &action); assert(g.phase == PHASE_OPPONENT && g.cpu_spot == g.opponent_start);
+    game_init(&g); game_kick(&g, true); g.kick_meter = 50; game_update(&g, &action); assert(g.result == RESULT_MISSED_KICK);
+    game_init(&g);
+    g.spot = 90 * YARD; game_kick(&g, true); g.kick_meter = 50; game_update(&g, &action); assert(g.result == RESULT_FIELD_GOAL);
     game_init(&g); g.phase = PHASE_LIVE; g.carrier.x = 0; game_update(&g, &idle);
     assert(g.opponent_score == 2 && g.result == RESULT_SAFETY);
 }
@@ -72,7 +74,7 @@ static void test_menus_pause(void) {
     app_update(&a, &action); assert(a.screen == SCREEN_MATCH);
     a.screen = SCREEN_ROSTER; a.selection = 0;
     int rating = a.season.roster[0].rating;
-    app_update(&a, &action); assert(a.season.roster[0].rating == rating);
+    app_update(&a, &action); app_update(&a, &action); assert(a.season.roster[0].rating == rating);
     a.screen = SCREEN_PAUSE; a.selection = 1; app_update(&a, &action);
     assert(a.exit_after_save && a.save_requested); app_save_result(&a, false);
     assert(!a.exit_requested && a.notice == 2);
@@ -124,8 +126,84 @@ static void test_full_seasons(void) {
     assert(a.season.year == 3);
     remove_saves();
 }
+static void test_contracts(void) {
+    Season s; season_init(&s, 0); s.credits = 200;
+    assert(season_payroll(&s) <= SALARY_CAP);
+    for (int i = 0; i < ROSTER_COUNT; ++i) { s.roster[i].salary = 14; s.roster[i].years = 2; }
+    s.roster[ROLE_K].salary = 16; /* Exactly 100M. */
+    Season before = s;
+    assert(!season_recruit(&s, ROLE_QB)); assert(!memcmp(&s, &before, sizeof(s)));
+    s.roster[ROLE_QB].rating = 90; before = s;
+    assert(!season_renew(&s, ROLE_QB)); assert(!memcmp(&s, &before, sizeof(s)));
+    s.roster[ROLE_QB].rating = 60;
+    assert(season_can_sign(&s, ROLE_QB, 14)); assert(!season_can_sign(&s, ROLE_QB, 15));
+    assert(season_release(&s, ROLE_WR1)); assert(season_payroll(&s) == 86);
+    assert(s.roster[ROLE_WR1].rating == 40 && !season_train(&s, ROLE_WR1));
+    assert(season_recruit(&s, ROLE_QB)); assert(season_payroll(&s) <= SALARY_CAP);
+    int salary = s.roster[ROLE_QB].salary;
+    assert(season_train(&s, ROLE_QB)); assert(s.roster[ROLE_QB].salary == salary);
+    s.roster[ROLE_QB].years = 1; assert(season_renew(&s, ROLE_QB)); assert(s.roster[ROLE_QB].years == 2);
+    s.week = SEASON_WEEKS; s.roster[ROLE_K].years = 1;
+    season_next(&s); assert(!s.roster[ROLE_K].years && s.roster[ROLE_K].salary == 0 && s.roster[ROLE_K].rating == 40);
+    assert(season_effective_rating(&s, ROLE_K) == 40);
+    assert(!season_renew(&s, ROLE_K));
+}
+static void test_special_teams(void) {
+    Game g; game_init(&g); Input special = {.target_pressed = true};
+    game_update(&g, &special); assert(g.phase == PHASE_SPECIAL);
+    game_update(&g, &special); assert(g.phase == PHASE_CALL);
+    game_update(&g, &special); Input down = {.down_pressed = true}; game_update(&g, &down);
+    game_update(&g, &action); assert(g.phase == PHASE_KICK && g.kick_kind == KICK_FIELD_GOAL);
+    g.kick_meter = 50; game_update(&g, &action); assert(g.result == RESULT_MISSED_KICK && g.opponent_start == 82);
+    game_init(&g); g.spot = 65 * YARD; game_kick(&g, true); g.kick_meter = 50;
+    game_update(&g, &action); assert(g.result == RESULT_FIELD_GOAL && g.score == 3);
+    game_init(&g); g.spot = 65 * YARD; game_kick(&g, true); g.kick_meter = 0;
+    game_update(&g, &action); assert(g.result == RESULT_MISSED_KICK && g.score == 0 && g.opponent_start == 42);
+    game_init(&g); g.spot = 80 * YARD; game_kick(&g, false); g.kick_meter = 50;
+    game_update(&g, &action); assert(g.kick_touchback && g.opponent_start == 20);
+    game_init(&g); game_kick(&g, false); g.kick_meter = 0;
+    game_update(&g, &action); assert(g.kick_return > 0 && !g.kick_touchback);
+    game_init(&g); game_kick(&g, false);
+    for (int i = 0; i < 150; ++i) game_update(&g, &idle);
+    assert(g.phase == PHASE_RESULT);
+    game_init(&g); g.quarter = 4; g.clock_ticks = 1; game_update(&g, &action);
+    g.carrier.x = 100 * YARD; game_update(&g, &idle);
+    assert(g.score == 6 && g.pending_pat && !g.clock_ticks);
+    game_update(&g, &action); assert(g.phase == PHASE_KICK);
+    g.kick_meter = 50; game_update(&g, &action); assert(g.score == 7 && !g.pending_pat);
+    game_update(&g, &action); assert(g.phase == PHASE_FINAL);
+    App a, loaded; app_init(&a); a.has_career = true; app_start_match(&a); game_kick(&a.game, false);
+    for (int i = 0; i < 11; ++i) app_update(&a, &idle);
+    Input pause = {.quit = true}; app_update(&a, &pause);
+    Game frozen = a.game; app_update(&a, &idle); assert(!memcmp(&frozen, &a.game, sizeof(Game)));
+    remove_saves(); assert(save_write(&a, "build/test-save")); assert(save_load(&loaded, "build/test-save"));
+    assert(!memcmp(&a.game, &loaded.game, sizeof(Game))); remove_saves();
+}
+static void test_v1_migration(void) {
+    remove_saves(); FILE *src = fopen("tests/fixtures/v1-flight.bin", "rb"); assert(src);
+    FILE *dst = fopen("build/test-save1.tns", "wb"); assert(dst);
+    int byte; while ((byte = fgetc(src)) != EOF) fputc(byte, dst);
+    fclose(src); fclose(dst);
+    App a, loaded; assert(save_load(&a, "build/test-save"));
+    assert(a.season.team == 2 && a.match_active && a.game.in_flight && a.game.phase == PHASE_LIVE);
+    assert(a.season.salary_cap == 100 && season_payroll(&a.season) == 68 && a.game.ratings[ROLE_K] == 60);
+    assert(!a.game.pending_pat && a.season.roster[ROLE_QB].rating == 60);
+    assert(save_write(&a, "build/test-save")); assert(save_load(&loaded, "build/test-save"));
+    assert(!memcmp(&a.game, &loaded.game, sizeof(Game)) && !memcmp(&a.season, &loaded.season, sizeof(Season)));
+    remove_saves();
+    src = fopen("tests/fixtures/v1-touchdown.bin", "rb"); assert(src);
+    dst = fopen("build/test-save1.tns", "wb"); assert(dst);
+    while ((byte = fgetc(src)) != EOF) fputc(byte, dst);
+    fclose(src); fclose(dst);
+    assert(save_load(&a, "build/test-save"));
+    assert(a.game.score == 7 && !a.game.pending_pat);
+    app_update(&a, &action); /* Continue from title. */
+    app_update(&a, &action); /* Advance the already-converted touchdown. */
+    assert(a.game.phase == PHASE_OPPONENT && a.game.score == 7);
+    remove_saves();
+}
 int main(void) {
-    test_schedule(); test_progression(); test_clock_and_cpu(); test_menus_pause(); test_saves(); test_full_seasons();
+    test_contracts(); test_special_teams(); test_v1_migration(); test_schedule(); test_progression(); test_clock_and_cpu(); test_menus_pause(); test_saves(); test_full_seasons();
     puts("Eight-team schedules, progression, match clocks, menus, save recovery, and two full seasons passed.");
     return 0;
 }

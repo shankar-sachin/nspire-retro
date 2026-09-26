@@ -157,14 +157,36 @@ static void draw_game(const Game *g) {
             text(64, y, game_play_name((Play)i), PAPER, 1);
         }
         text(48, 165, "UP/DOWN PICK  ENTER SNAP", GOLD, 1);
-        text(48, 178, g->spot >= 55 * PX_PER_YARD * FP ? "CTRL FIELD GOAL" : "CTRL PUNT", PAPER, 1);
+        text(48, 178, "CTRL SPECIAL TEAMS", PAPER, 1);
     } else if (g->phase == PHASE_RESULT) {
         rect(28, 80, 264, 93, PAPER); rect(30, 82, 260, 89, INK);
         text(44, 94, game_result_name(g->result), GOLD, 1);
-        snprintf(line, sizeof(line), "GAIN %+d YARDS", g->last_gain);
+        if (g->result == RESULT_PUNT) snprintf(line, sizeof(line), "%d YD PUNT  %s", g->kick_distance, g->kick_touchback ? "TOUCHBACK" : "RETURN");
+        else if (g->result == RESULT_FIELD_GOAL || g->result == RESULT_MISSED_KICK || g->result == RESULT_EXTRA_POINT || g->result == RESULT_EXTRA_MISSED)
+            snprintf(line, sizeof(line), "%d YARD ATTEMPT", g->kick_distance);
+        else snprintf(line, sizeof(line), "GAIN %+d YARDS", g->last_gain);
         text(44, 114, line, PAPER, 1);
-        text(44, 136, g->new_drive ? "ENTER OPPONENT POSSESSION" : "ENTER TO CALL NEXT PLAY", PAPER, 1);
+        text(44, 136, g->pending_pat ? "ENTER EXTRA POINT ATTEMPT" : (g->new_drive ? "ENTER OPPONENT POSSESSION" : "ENTER TO CALL NEXT PLAY"), PAPER, 1);
         text(44, 153, "ESC PAUSE", PAPER, 1);
+    }
+    if (g->phase == PHASE_SPECIAL || g->phase == PHASE_KICK) {
+        rect(20, 57, 280, 136, PAPER); rect(22, 59, 276, 132, INK);
+        text(34, 70, "SPECIAL TEAMS", GOLD, 2);
+        if (g->phase == PHASE_SPECIAL) {
+            text(34, 100, g->kick_kind == KICK_PUNT ? "> PUNT" : "  PUNT", PAPER, 1);
+            snprintf(line, sizeof(line), "%s FIELD GOAL - %d YARDS", g->kick_kind == KICK_FIELD_GOAL ? ">" : " ", 117 - g->spot / (PX_PER_YARD * FP));
+            text(34, 120, line, PAPER, 1);
+            text(34, 150, "UP/DOWN PICK  ENTER BEGIN", GOLD, 1);
+            text(34, 172, "CTRL CANCEL  ESC PAUSE", PAPER, 1);
+        } else {
+            const char *kind = g->kick_kind == KICK_PUNT ? "PUNT" : (g->kick_kind == KICK_PAT ? "EXTRA POINT" : "FIELD GOAL");
+            snprintf(line, sizeof(line), "%s  K RATING %d", kind, g->ratings[ROLE_K]); text(34, 99, line, PAPER, 1);
+            rect(34, 121, 250, 14, PAPER); rect(36, 123, 246, 10, RED);
+            rect(132, 123, 50, 10, TURF); rect(156, 120, 2, 16, GOLD);
+            rect(36 + g->kick_meter * 244 / 100, 119, 3, 18, GOLD);
+            text(34, 149, "ENTER STOP AT CENTER", GOLD, 1);
+            text(34, 171, "KICK COMMITS AFTER 5 SECONDS", PAPER, 1);
+        }
     }
     if (g->phase == PHASE_OPPONENT || g->phase == PHASE_BREAK || g->phase == PHASE_FINAL) {
         rect(20, 57, 280, 136, PAPER); rect(22, 59, 276, 132, INK);
@@ -217,7 +239,7 @@ void render_app(const App *a) {
     }
     case SCREEN_TITLE: {
         static const char *const rows[] = {"CONTINUE CAREER", "NEW CAREER", "SETTINGS", "CONTROLS", "SAVE AND EXIT", "EXIT WITHOUT SAVING"};
-        page("NSPIRE RETRO"); text(18, 40, "EIGHT TEAMS - YOUR DYNASTY", PAPER, 1);
+        page("NSPIRE RETRO"); text(264, 17, "V1.1.0", PAPER, 1); text(18, 40, "EIGHT TEAMS - YOUR DYNASTY", PAPER, 1);
         rect(18, 56, 284, 32, TURF);
         for (int i = 0; i < 8; ++i) {
             rect(21 + i * 35, 61, 28, 12, season_team_color(i)); text(22 + i * 35, 77, season_team_abbr(i), PAPER, 1);
@@ -248,15 +270,35 @@ void render_app(const App *a) {
     }
     case SCREEN_ROSTER:
         page("ROSTER");
-        snprintf(line, sizeof(line), "CREDITS %d   RATE  XP  FITNESS", s->credits); text(18, 40, line, GOLD, 1);
+        snprintf(line, sizeof(line), "PAYROLL %dM / %dM  ROOM %dM", season_payroll(s), s->salary_cap, s->salary_cap - season_payroll(s)); text(18, 40, line, GOLD, 1);
+        text(36, 55, "ROLE PLAYER   RATE PAY YEARS", PAPER, 1);
         for (int i = 0; i < ROSTER_COUNT; ++i) {
             const Player *p = &s->roster[i];
-            snprintf(line, sizeof(line), "%-3s %-8s %2d   %d   %3d", season_role_name(i), season_player_name(p->name), p->rating, p->xp, p->condition);
-            menu_row(59 + i * 19, line, i == a->selection);
+            snprintf(line, sizeof(line), "%-3s %-8s %2d  %2dM  %d", season_role_name(i), p->years ? season_player_name(p->name) : "RESERVE", p->rating, p->salary, p->years);
+            menu_row(73 + i * 17, line, i == a->selection);
         }
-        snprintf(line, sizeof(line), "RECRUIT: RATE %d COST %d", season_recruit_rating(s, a->selection), season_recruit_cost(s, a->selection)); text(18, 179, line, GOLD, 1);
-        text(18, 194, a->match_active ? "ROSTER LOCKED DURING MATCH" : "ENTER TRAIN 6  CTRL REPLACE", PAPER, 1);
-        rect(0, 213, WIDTH, 14, INK); text(18, 218, "RIGHT RECOVER 5  ESC BACK", PAPER, 1);
+        snprintf(line, sizeof(line), "CREDITS %d  ENTER MANAGE PLAYER", s->credits); text(18, 200, line, GOLD, 1);
+        break;
+    case SCREEN_PLAYER: {
+        int role = a->roster_selection; const Player *p = &s->roster[role];
+        page("PLAYER CONTRACT");
+        snprintf(line, sizeof(line), "%s %s  RATING %d", season_role_name(role), p->years ? season_player_name(p->name) : "RESERVE", p->rating); text(18, 40, line, PAPER, 1);
+        snprintf(line, sizeof(line), "PAY %dM  YEARS %d  FITNESS %d  XP %d", p->salary, p->years, p->condition, p->xp); text(18, 54, line, PAPER, 1);
+        snprintf(line, sizeof(line), "CAP %d/%dM  CREDITS %d", season_payroll(s), s->salary_cap, s->credits); text(18, 69, line, GOLD, 1);
+        snprintf(line, sizeof(line), "TRAIN +2 RATING - 6 CREDITS"); menu_row(92, line, a->selection == 0);
+        snprintf(line, sizeof(line), "SIGN R%d - %dM / %d CREDITS", season_recruit_rating(s, role), season_salary(season_recruit_rating(s, role), role), season_recruit_cost(s, role)); menu_row(113, line, a->selection == 1);
+        snprintf(line, sizeof(line), "RENEW 2 YEARS - %dM / 3 CREDITS", season_salary(p->rating, role)); menu_row(134, line, a->selection == 2);
+        menu_row(155, "RELEASE TO FREE RESERVE", a->selection == 3);
+        menu_row(176, "RECOVER TEAM - 5 CREDITS", a->selection == 4);
+        text(18, 202, a->match_active ? "LOCKED UNTIL MATCH FINISHES" : "PAY REPLACES CURRENT CAP CHARGE", GOLD, 1);
+        break;
+    }
+    case SCREEN_RELEASE:
+        page("RELEASE PLAYER");
+        text(18, 57, "REPLACE WITH A FREE RATING 40 RESERVE?", PAPER, 1);
+        text(18, 80, "PLAYER PROGRESS WILL BE LOST", GOLD, 1);
+        menu_row(120, "KEEP PLAYER", a->selection == 0);
+        menu_row(146, "RELEASE AND CLEAR SALARY", a->selection == 1);
         break;
     case SCREEN_SCHEDULE:
         page(a->selection ? "STANDINGS" : "SCHEDULE");
@@ -286,13 +328,13 @@ void render_app(const App *a) {
     }
     case SCREEN_HELP: {
         page("CONTROLS");
-        static const char *const rows[] = {"ARROWS MOVE / SELECT PLAY", "ENTER SNAP / THROW / CONTINUE", "CTRL SWITCH RECEIVER", "SHIFT RUN = LIMITED SPRINT", "SHIFT + ENTER = LOB PASS", "CALL SCREEN CTRL = PUNT OR FG", "ESC PAUSES / RETURNS", "4 QUARTERS - TD 7 - FG 3", "DEFENSE IS SIMULATED", "AUTOSAVE AT PLAY TRANSITIONS"};
+        static const char *const rows[] = {"ARROWS MOVE / SELECT PLAY", "ENTER SNAP / THROW / CONTINUE", "CTRL SWITCH RECEIVER", "SHIFT RUN = LIMITED SPRINT", "SHIFT + ENTER = LOB PASS", "CALL SCREEN CTRL = PUNT OR FG", "ESC PAUSES / RETURNS", "TD 6 - KICK PAT 1 - FG 3", "DEFENSE IS SIMULATED", "AUTOSAVE AT PLAY TRANSITIONS"};
         for (int i = 0; i < 10; ++i) text(18, 46 + i * 16, rows[i], PAPER, 1);
         break;
     }
     }
     if (a->notice_ticks > 0) {
-        static const char *const messages[] = {"", "SAVED", "SAVE FAILED - RETRY SAVE", "FUNDS FITNESS OR RATING LIMIT", "CLUB UPDATED", "SAVE RECOVERED"};
+        static const char *const messages[] = {"", "SAVED", "SAVE FAILED - RETRY SAVE", "FUNDS FITNESS OR RATING LIMIT", "CLUB UPDATED", "SAVE RECOVERED", "SALARY CAP - RELEASE A PLAYER"};
         rect(0, 229, WIDTH, 11, INK); text(8, 231, messages[a->notice], a->notice == 2 ? RED : GOLD, 1);
     }
     if (initialized) lcd_blit(pixels, SCR_320x240_565);

@@ -45,17 +45,18 @@ static void formation(Game *g) {
     g->caught_receiver = -1; g->target = 0;
     g->energy = 100; g->throw_cooldown = 0; g->flight_duration = PASS_TICKS;
 }
-void game_start(Game *g, int seconds, int difficulty, const int ratings[6], int opponent_rating, uint32_t seed) {
+void game_start(Game *g, int seconds, int difficulty, const int ratings[ROSTER_COUNT], int opponent_rating, uint32_t seed) {
     memset(g, 0, sizeof(*g));
     g->phase = PHASE_CALL; g->drive = 1; g->quarter = 1;
     g->quarter_seconds = clamp(seconds, 30, 180); g->clock_ticks = g->quarter_seconds * GAME_HZ;
     g->difficulty = clamp(difficulty, 0, 2); g->opponent_rating = clamp(opponent_rating, 30, 95);
-    for (int i = 0; i < 6; ++i) g->ratings[i] = clamp(ratings[i], 20, 95);
+    for (int i = 0; i < ROSTER_COUNT; ++i) g->ratings[i] = clamp(ratings[i], 20, 95);
+    g->kick_direction = 1;
     g->rng = seed ? seed : 1; g->away_team = 1;
     fresh_drive(g, 25); formation(g);
 }
 void game_init(Game *g) {
-    const int ratings[6] = {65, 65, 65, 65, 65, 65};
+    const int ratings[ROSTER_COUNT] = {65, 65, 65, 65, 65, 65, 65};
     game_start(g, 90, 1, ratings, 65, 0x12345678u);
 }
 int game_yards_to_go(const Game *g) {
@@ -77,7 +78,7 @@ static void finish(Game *g, Result reason, bool incomplete) {
         g->opponent_start = clamp(100 - g->ball.x / YARD, 5, 95);
         g->new_drive = true; ++g->turnovers;
     } else if (!incomplete && end >= GOAL) {
-        g->score += TOUCHDOWN_POINTS; ++g->touchdowns;
+        g->score += TOUCHDOWN_POINTS; ++g->touchdowns; g->pending_pat = true;
         g->result = RESULT_TOUCHDOWN; g->new_drive = true; g->opponent_start = 25;
     } else if (!incomplete && end <= 0) {
         g->result = RESULT_SAFETY; g->new_drive = true; ++g->turnovers;
@@ -134,20 +135,40 @@ static void cpu_play(Game *g) {
         g->cpu_down = 1; g->cpu_line = clamp(g->cpu_spot + 10, 0, 100);
     } else ++g->cpu_down;
 }
+static void start_kick(Game *g, int kind) {
+    g->kick_kind = kind; g->kick_meter = 0; g->kick_direction = 1; g->kick_ticks = 0;
+    g->kick_return = 0; g->kick_touchback = false;
+    g->kick_distance = kind == KICK_PAT ? 33 : (kind == KICK_FIELD_GOAL ? 117 - g->spot / YARD : 0);
+    g->phase = PHASE_KICK;
+}
 void game_kick(Game *g, bool field_goal) {
-    if (g->phase != PHASE_CALL || g->clock_ticks == 0) return;
-    int spot = g->spot / YARD;
-    if (field_goal && spot < 55) return;
-    g->clock_ticks = clamp(g->clock_ticks - 5 * GAME_HZ, 0, 180 * GAME_HZ);
+    if ((g->phase != PHASE_CALL && g->phase != PHASE_SPECIAL) || !g->clock_ticks) return;
+    start_kick(g, field_goal ? KICK_FIELD_GOAL : KICK_PUNT);
+}
+static void resolve_kick(Game *g) {
+    int quality = 100 - abs_i(g->kick_meter - 50) * 2;
+    int rating = g->ratings[ROLE_K], spot = g->spot / YARD;
     g->new_drive = true; g->last_gain = 0; g->phase = PHASE_RESULT;
-    if (field_goal) {
-        bool made = (int)(random_u(g) % 100) < clamp(35 + (spot - 55) * 2 + (g->ratings[ROLE_QB] - 60) / 2, 20, 95);
-        g->result = made ? RESULT_FIELD_GOAL : RESULT_MISSED_KICK;
-        if (made) g->score += 3;
-        g->opponent_start = made ? 25 : clamp(100 - spot, 5, 95);
-    } else {
+    if (g->kick_kind != KICK_PAT) g->clock_ticks = clamp(g->clock_ticks - 5 * GAME_HZ, 0, 180 * GAME_HZ);
+    if (g->kick_kind == KICK_PUNT) {
+        g->kick_distance = 25 + rating / 4 + quality / 5;
+        int landing = spot + g->kick_distance;
+        g->kick_touchback = landing >= 100;
+        g->kick_return = g->kick_touchback ? 0 : (100 - quality) / 10 + (95 - rating) / 15;
+        g->opponent_start = g->kick_touchback ? 20 : clamp(100 - landing + g->kick_return, 1, 99);
         g->result = RESULT_PUNT;
-        g->opponent_start = clamp(100 - spot - 35, 10, 90);
+    } else {
+        bool made = g->kick_distance <= 30 + rating / 3 + quality / 8 &&
+            quality >= 45 + g->kick_distance / 3 - rating / 8;
+        if (g->kick_kind == KICK_PAT) {
+            if (made) ++g->score;
+            g->pending_pat = false; g->opponent_start = 25;
+            g->result = made ? RESULT_EXTRA_POINT : RESULT_EXTRA_MISSED;
+        } else {
+            if (made) g->score += 3;
+            g->opponent_start = made ? 25 : clamp(107 - spot, 20, 99);
+            g->result = made ? RESULT_FIELD_GOAL : RESULT_MISSED_KICK;
+        }
     }
 }
 static void route_step(const Game *g, Actor *a, int index) {
@@ -211,6 +232,19 @@ static void defense_step(Game *g) {
 void game_update(Game *g, const Input *in) {
     g->animation = (g->animation + 1) % 120;
     if (g->phase == PHASE_FINAL) return;
+    if (g->phase == PHASE_SPECIAL) {
+        if (in->target_pressed) { g->phase = PHASE_CALL; return; }
+        if (in->up_pressed || in->down_pressed) g->kick_kind = !g->kick_kind;
+        if (in->action_pressed) game_kick(g, g->kick_kind == KICK_FIELD_GOAL);
+        return;
+    }
+    if (g->phase == PHASE_KICK) {
+        if (in->action_pressed || ++g->kick_ticks >= 150) { resolve_kick(g); return; }
+        g->kick_meter += g->kick_direction * (3 + g->difficulty);
+        if (g->kick_meter >= 100) { g->kick_meter = 100; g->kick_direction = -1; }
+        if (g->kick_meter <= 0) { g->kick_meter = 0; g->kick_direction = 1; }
+        return;
+    }
     if (g->phase == PHASE_BREAK) {
         if (in->action_pressed) {
             ++g->quarter; g->clock_ticks = g->quarter_seconds * GAME_HZ;
@@ -232,12 +266,13 @@ void game_update(Game *g, const Input *in) {
         if (in->up_pressed) g->selected_play = (Play)((g->selected_play + PLAY_COUNT - 1) % PLAY_COUNT);
         if (in->down_pressed) g->selected_play = (Play)((g->selected_play + 1) % PLAY_COUNT);
         formation(g);
-        if (in->target_pressed) { game_kick(g, g->spot >= 55 * YARD); return; }
+        if (in->target_pressed) { g->phase = PHASE_SPECIAL; g->kick_kind = KICK_PUNT; return; }
         if (in->action_pressed) { g->phase = PHASE_LIVE; g->result = RESULT_NONE; }
         return;
     }
     if (g->phase == PHASE_RESULT) {
         if (in->action_pressed) {
+            if (g->pending_pat) { start_kick(g, KICK_PAT); return; }
             if (g->new_drive) begin_cpu(g, g->opponent_start);
             else { g->phase = PHASE_CALL; formation(g); }
             boundary(g);
@@ -293,7 +328,7 @@ const char *game_play_name(Play play) {
     return names[play];
 }
 const char *game_result_name(Result result) {
-    static const char *const names[] = {"READY", "TACKLED", "OUT OF BOUNDS", "INCOMPLETE", "FIRST DOWN", "TOUCHDOWN PLUS EXTRA POINT",
-        "TURNOVER ON DOWNS", "INTERCEPTED", "SAFETY", "PLAY CLOCK EXPIRED", "PUNT", "FIELD GOAL", "KICK MISSED"};
+    static const char *const names[] = {"READY", "TACKLED", "OUT OF BOUNDS", "INCOMPLETE", "FIRST DOWN", "TOUCHDOWN",
+        "TURNOVER ON DOWNS", "INTERCEPTED", "SAFETY", "PLAY CLOCK EXPIRED", "PUNT", "FIELD GOAL", "KICK MISSED", "EXTRA POINT GOOD", "EXTRA POINT MISSED"};
     return names[result];
 }
