@@ -77,10 +77,29 @@ void app_update(App *a, const Input *in) {
     case SCREEN_ROSTER:
         if (in->quit) { navigate(a, SCREEN_HUB); break; }
         menu(a, in, ROSTER_COUNT); a->roster_selection = a->selection;
-        if (a->match_active) break; /* A suspended game's roster stays fixed. */
-        if (in->action_pressed) updated(a, season_train(&a->season, a->selection));
-        else if (in->target_pressed) updated(a, season_recruit(&a->season, a->selection));
-        else if (in->right_pressed) updated(a, season_recover(&a->season));
+        if (in->action_pressed) navigate(a, SCREEN_PLAYER);
+        break;
+    case SCREEN_PLAYER: {
+        int role = a->roster_selection;
+        if (in->quit) { navigate(a, SCREEN_ROSTER); a->selection = role; break; }
+        menu(a, in, 5);
+        if (a->match_active || !in->action_pressed) break;
+        if (a->selection == 0) updated(a, season_train(&a->season, role));
+        if (a->selection == 1 || a->selection == 2) {
+            int salary = season_salary(a->selection == 1 ? season_recruit_rating(&a->season, role) : a->season.roster[role].rating, role);
+            if (!season_can_sign(&a->season, role, salary)) { a->notice = 6; a->notice_ticks = 120; }
+            else updated(a, a->selection == 1 ? season_recruit(&a->season, role) : season_renew(&a->season, role));
+        }
+        if (a->selection == 3) { navigate(a, SCREEN_RELEASE); break; }
+        if (a->selection == 4) updated(a, season_recover(&a->season));
+        break;
+    }
+    case SCREEN_RELEASE:
+        menu(a, in, 2);
+        if (in->quit || (in->action_pressed && a->selection == 0)) navigate(a, SCREEN_PLAYER);
+        else if (in->action_pressed && !a->match_active) {
+            updated(a, season_release(&a->season, a->roster_selection)); navigate(a, SCREEN_PLAYER);
+        }
         break;
     case SCREEN_SCHEDULE:
         if (in->quit) navigate(a, SCREEN_HUB);

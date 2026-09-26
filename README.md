@@ -1,4 +1,4 @@
-# Nspire Retro
+# Nspire Retro v1.1.0
 
 An arcade football game for the **TI-Nspire CX II with Ndless**. Choose a team,
 manage a roster, play offensive snaps, watch simulated opponent possessions, and
@@ -23,15 +23,16 @@ fitness, and opponents gradually become stronger. This is a compact custom leagu
 not the NFL's 32-team schedule or postseason format.
 
 The clubhouse provides roster management, schedule/results, standings, settings,
-and the next match. Six roster slots affect gameplay:
+and the next match. Seven roster slots affect gameplay:
 
 | Role | Effect |
 |---|---|
-| QB | Scramble speed, passing range, accuracy under pressure, kick accuracy |
+| QB | Scramble speed, passing range, accuracy under pressure |
 | RB | Running speed |
 | WR1 / WR2 | Route speed, speed after a catch, catch radius |
 | OL | How long the two blockers hold defenders |
 | DEF | Opponent gains, turnovers, and kick success during simulated possessions |
+| K | Player punt distance, field-goal range, and kick accuracy |
 
 Wins earn 14 credits and five XP per player; losses/ties earn nine credits and
 three XP. Ten XP increases a rating by one. Training costs six credits for two
@@ -40,14 +41,36 @@ rating points and five fitness. Team recovery costs five credits and restores
 prospect, resetting that slot's XP and restoring fitness. Low fitness reduces
 effective ratings; ratings cap at 95. Rosters are locked while a match is active.
 
+### Salaries and contracts
+
+The seven-player roster has a **100M salary cap**, separate from coach credits.
+New careers use 80M. The roster shows each player's annual cap charge, remaining
+contract years, total payroll, and available room. Enter opens that player's
+management screen with training, recruiting, renewal, release, and team recovery.
+
+Signings and renewals last **two seasons**. Their quoted salary replaces the
+outgoing player's cap charge; an over-cap transaction changes neither the roster
+nor credits. Recruit signing costs remain coach credits; renewing costs three
+credits. Salaries stay fixed during a contract, even when training or XP improves
+the player. Renewals use the player's current rating and role to set a new salary.
+
+Starting a new season reduces remaining contract years by one. Expired players
+become free rating-40 reserves, so the team always remains playable. Release also
+replaces a player with a reserve and clears the salary, after an in-app confirmation.
+There is no dead-money penalty or release credit refund. Reserves cannot train,
+earn XP, or renew; recruit a player into the slot to develop it. This is a compact
+arcade cap model, not an implementation of NFL collective-bargaining rules.
+
 ## Match rules
 
 - Four quarters, configurable to 60, 90, or 120 simulation seconds each.
 - The player receives the opening kickoff at the 25; the opponent receives after
   halftime. Possession and field position carry through the first/third breaks.
 - Four downs to gain ten yards; near the goal line, the line to gain is the goal.
-- Touchdowns score **seven** (six plus an automatic extra point), field goals
-  three, safeties two to the defense. Regular-season ties are allowed.
+- Player touchdowns score **six**, followed by a manual extra-point kick worth
+  one. The attempt still occurs when the quarter or game clock expires on the
+  touchdown. Opponent conversions remain automatic. Field goals score three and
+  safeties two to the defense. Regular-season ties are allowed.
 - Offense always attacks right. The blue line marks the snap spot; gold marks
   the first-down target. The HUD shows both scores, quarter, clock, down, field
   position, and sprint energy.
@@ -64,8 +87,17 @@ effective ratings; ratings cap at 95. Rosters are locked while a match is active
   Energy resets between snaps. Diagonal movement is normalized.
 - Tackles and sidelines end the play; sacks lose yardage. Incompletions preserve
   the snap spot. Interceptions and failed fourth downs flip field position.
-- Ctrl on the play-call screen punts below the opponent's 45-yard line, or attempts
-  a field goal from there onward. Kick success depends on distance and QB rating.
+- Ctrl on the play-call screen opens **Special Teams**. Select Punt or Field Goal
+  with Up/Down, then Enter to start the kick. Ctrl cancels before committing.
+- Press Enter again to stop the meter near its center. Kicker rating and timing
+  determine punt distance or field-goal range/accuracy. The meter commits after
+  five simulation seconds if you do not press Enter. Esc pauses it normally.
+- Field-goal distance includes 17 yards for the snap and end zone. Long attempts
+  can fall short even with perfect timing. Misses give the opponent the kick spot,
+  or its 20, whichever is farther from its goal line. Punt touchbacks start at the
+  20; short punts can be returned, with worse timing allowing longer returns.
+- Kickoffs are still automatic at the 25. Punt returns are simulated; no manual
+  return or onside-kick mode is included.
 - Opponent possessions resolve one snap at a time using downs, field position,
   defense rating, difficulty, and deterministic saved randomness. Fourth down
   produces a punt or field-goal attempt. Watch them or press Enter to advance.
@@ -84,7 +116,10 @@ effective ratings; ratings cap at 95. Rosters are locked while a match is active
 | Menus | Up / Down, Enter | Select / confirm |
 | Team selection | Up / Down, Enter | Choose one of eight clubs |
 | Play calling | Up / Down, Enter | Pick play / snap |
-| Play calling | Ctrl | Punt or attempt field goal, according to field position |
+| Play calling | Ctrl | Open Special Teams |
+| Special Teams | Up / Down, Enter | Choose Punt / Field Goal and start meter |
+| Special Teams | Ctrl | Cancel before starting meter |
+| Kick meter | Enter | Stop near center and kick |
 | Live play | Arrows / touchpad arrows | Move carrier |
 | Live play | Shift + movement | Sprint while energy lasts |
 | Pass play | Ctrl | Select receiver 1 or 2 |
@@ -93,9 +128,8 @@ effective ratings; ratings cap at 95. Rosters are locked while a match is active
 | Match | Esc | Pause; freezes the complete match state |
 | Result / quarter break | Enter | Continue |
 | Opponent possession | Enter | Advance next snap / continue |
-| Roster | Enter | Train selected player (6 credits) |
-| Roster | Ctrl | Replace selected player with displayed recruit |
-| Roster | Right | Recover entire team's fitness (5 credits) |
+| Roster | Enter | Open selected player management |
+| Player management | Up / Down, Enter | Train, sign, renew, release, or recover team |
 | Schedule / standings | Left / Right or Enter | Switch pages |
 | Settings | Left / Right or Enter | Change selected setting |
 | Other menus | Esc | Return |
@@ -108,6 +142,15 @@ The title and pause menus also offer an explicit **Exit without saving** option
 if storage is unavailable.
 
 ## Saves
+
+Save format 2 automatically imports format-1 (`v1.0.0`) careers, including live
+passes and match clocks. Existing six players retain their progress and receive
+10M, two-season contracts; a rating-60 kicker receives an 8M contract. Migrated
+payroll is 68M regardless of previous player ratings, so no player is removed to
+meet the cap. Future renewals use normal salary quotes. Previously awarded
+`v1.0.0` automatic extra points are not awarded again. New saves include all
+contracts and the exact kick-meter state. `v1.0.0` cannot read format-2 saves;
+back up both original slots before returning to that older version.
 
 The game uses two small, versioned, checksummed files **beside the executable**:
 `nspire-retro-save0.tns` and `nspire-retro-save1.tns`. These are data files; launch
@@ -188,7 +231,9 @@ Requires a host C99 compiler with AddressSanitizer and UndefinedBehaviorSanitize
 The suite covers football rules; run/pass/catch/interception/pressure/range;
 blocking, coverage, stamina and difficulty effects; 100,000 simulation ticks;
 all eight round-robin schedules; roster economics and progression; pause/input
-edges; quarters/halftime/final scores; save round trips and damaged-slot recovery;
+edges; quarters/halftime/final scores; kick timing, touchbacks, returns, missed
+kicks, buzzer extra points, cap-safe transactions, renewal/expiry, and migration
+of a fixture produced by the actual `v1.0.0` encoder; save round trips and damaged-slot recovery;
 and **two complete seven-game seasons through the public app state machine**.
 It also renders every menu with clipping checks and writes 320x240 PPM previews
 in `build/`. Host stubs are never included in calculator builds.

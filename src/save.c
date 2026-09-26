@@ -1,7 +1,7 @@
 #include "save.h"
 #include <stdio.h>
 #include <string.h>
-#define SAVE_VERSION 1u
+#define SAVE_VERSION 2u
 #define SAVE_CAPACITY 2048
 /* Every scalar is explicitly serialized, independent of compiler padding and ABI. */
 #define GAME_FIELDS(X) \
@@ -40,7 +40,7 @@ static void encode(Buffer *b, const App *a, uint32_t sequence) {
 #define WRITE_S(f) put(b, (uint32_t)s->f);
     SEASON_FIELDS(WRITE_S)
 #undef WRITE_S
-    for (int i = 0; i < ROSTER_COUNT; ++i) {
+    for (int i = 0; i < 6; ++i) {
         put(b, (uint32_t)s->roster[i].name); put(b, (uint32_t)s->roster[i].rating);
         put(b, (uint32_t)s->roster[i].xp); put(b, (uint32_t)s->roster[i].condition);
     }
@@ -58,6 +58,14 @@ static void encode(Buffer *b, const App *a, uint32_t sequence) {
     for (int i = 0; i < DEFENDER_COUNT; ++i) { actor_put(b, g->defenders[i]); put(b, (uint32_t)g->blocked[i]); }
     for (int i = 0; i < BLOCKER_COUNT; ++i) actor_put(b, g->blockers[i]);
     for (int i = 0; i < 6; ++i) put(b, (uint32_t)g->ratings[i]);
+    put(b, (uint32_t)s->salary_cap);
+    const Player *k = &s->roster[ROLE_K];
+    put(b, (uint32_t)k->name); put(b, (uint32_t)k->rating); put(b, (uint32_t)k->xp); put(b, (uint32_t)k->condition);
+    for (int i = 0; i < ROSTER_COUNT; ++i) { put(b, (uint32_t)s->roster[i].salary); put(b, (uint32_t)s->roster[i].years); }
+    put(b, (uint32_t)g->ratings[ROLE_K]);
+    put(b, (uint32_t)g->kick_kind); put(b, (uint32_t)g->kick_meter); put(b, (uint32_t)g->kick_direction);
+    put(b, (uint32_t)g->kick_ticks); put(b, (uint32_t)g->kick_distance); put(b, (uint32_t)g->kick_return);
+    put(b, g->pending_pat); put(b, g->kick_touchback);
     uint32_t hash = checksum(b->data, b->pos); put(b, hash);
 }
 static bool range(int n, int lo, int hi) { return n >= lo && n <= hi; }
@@ -66,11 +74,15 @@ static bool valid(const App *a) {
     const Season *s = &a->season; const Game *g = &a->game;
     if (!range(a->settings.difficulty, 0, 2) || (a->settings.quarter_seconds != 60 && a->settings.quarter_seconds != 90 && a->settings.quarter_seconds != 120) || !range(a->settings.animations, 0, 1)) return false;
     if (!range(s->team, 0, TEAM_COUNT - 1) || !range(s->week, 0, SEASON_WEEKS) || !range(s->year, 1, 999) || !range(s->credits, 0, 9999) || !range(s->trophies, 0, 100000) || !range(s->career_wins, 0, 100000) || !range(s->career_losses, 0, 100000)) return false;
-    for (int i = 0; i < 6; ++i) {
+    if (s->salary_cap != SALARY_CAP) return false;
+    for (int i = 0; i < ROSTER_COUNT; ++i) {
         const Player *p = &s->roster[i];
         if (!range(p->name, 0, 11) || !range(p->rating, 30, 95) || !range(p->xp, 0, 9) || !range(p->condition, 0, 100)) return false;
+        if (!range(p->salary, 0, 40) || !range(p->years, 0, 2) || ((p->years == 0) != (p->salary == 0))) return false;
+        if (!p->years && (p->rating != 40 || p->xp != 0)) return false;
         if (!range(g->ratings[i], 20, 95)) return false;
     }
+    if (season_payroll(s) > s->salary_cap) return false;
     for (int i = 0; i < SEASON_WEEKS; ++i) for (int j = 0; j < 2; ++j)
         if (i < s->week ? !range(s->results[i][j], 0, 1000) : s->results[i][j] != -1) return false;
     for (int i = 0; i < TEAM_COUNT; ++i) {
@@ -78,13 +90,18 @@ static bool valid(const App *a) {
         if (!range(t->wins, 0, SEASON_WEEKS) || !range(t->losses, 0, SEASON_WEEKS) || !range(t->ties, 0, SEASON_WEEKS) || t->wins + t->losses + t->ties != s->week || !range(t->points_for, 0, 5000) || !range(t->points_against, 0, 5000)) return false;
     }
     if (a->match_active && (!a->has_career || s->week >= SEASON_WEEKS || g->home_team != s->team || g->away_team != season_opponent(s->team, s->week))) return false;
-    if (!range(g->phase, PHASE_CALL, PHASE_FINAL) || !range(g->selected_play, 0, 3) || !range(g->result, RESULT_NONE, RESULT_MISSED_KICK) || !range(g->resume_phase, PHASE_CALL, PHASE_FINAL)) return false;
+    if (!range(g->phase, PHASE_CALL, PHASE_KICK) || !range(g->selected_play, 0, 3) || !range(g->result, RESULT_NONE, RESULT_EXTRA_MISSED) || !range(g->resume_phase, PHASE_CALL, PHASE_FINAL)) return false;
     if (!range(g->quarter, 1, 4) || !range(g->quarter_seconds, 30, 180) || !range(g->clock_ticks, 0, g->quarter_seconds * GAME_HZ) || !range(g->down, 1, 4) || !range(g->difficulty, 0, 2)) return false;
     if (!range(g->home_team, 0, TEAM_COUNT - 1) || !range(g->away_team, 0, TEAM_COUNT - 1) || !range(g->opponent_rating, 30, 95)) return false;
     if (!range(g->score, 0, 1000) || !range(g->opponent_score, 0, 1000) || !range(g->spot, 0, FIELD_LENGTH * FP) || !range(g->line_to_gain, 0, FIELD_LENGTH * FP)) return false;
     if (!range(g->target, 0, 1) || !range(g->caught_receiver, -1, 1) || !range(g->ticks, 0, PLAY_LIMIT_TICKS) || !range(g->flight_duration, 16, 24) || !range(g->flight_ticks, 0, g->flight_duration) || !range(g->energy, 0, 100) || !range(g->animation, 0, 119)) return false;
     if (!range(g->drive, 1, 1000) || !range(g->turnovers, 0, 1000) || !range(g->last_gain, -100, 100) || !range(g->throw_cooldown, 0, 1000) || !range(g->pass_attempts, 0, 1000) || !range(g->completions, 0, g->pass_attempts) || !range(g->passing_yards, -10000, 10000) || !range(g->rushing_yards, -10000, 10000) || !range(g->touchdowns, 0, 1000)) return false;
     if (!range(g->cpu_spot, 0, 100) || !range(g->cpu_down, 0, 4) || !range(g->cpu_line, 0, 100) || !range(g->cpu_timer, 0, 45) || !range(g->cpu_event, 0, 7) || !range(g->cpu_gain, -4, 34) || !range(g->opponent_start, 0, 100)) return false;
+    if (!range(g->kick_kind, KICK_PUNT, KICK_PAT) || !range(g->kick_meter, 0, 100) ||
+        (g->kick_direction != -1 && g->kick_direction != 1) || !range(g->kick_ticks, 0, 150) ||
+        !range(g->kick_distance, 0, 117) || !range(g->kick_return, 0, 15)) return false;
+    if (g->phase == PHASE_SPECIAL && g->kick_kind == KICK_PAT) return false;
+    if (g->pending_pat && (!g->new_drive || (g->phase != PHASE_RESULT && g->phase != PHASE_KICK))) return false;
     if (!valid_actor(g->carrier) || !valid_actor(g->ball) || !valid_actor(g->throw_start) || !valid_actor(g->throw_target)) return false;
     for (int i = 0; i < RECEIVER_COUNT; ++i) if (!valid_actor(g->receivers[i])) return false;
     for (int i = 0; i < BLOCKER_COUNT; ++i) if (!valid_actor(g->blockers[i])) return false;
@@ -95,7 +112,9 @@ static bool decode(Buffer *b, App *a) {
     if (b->size < 16 || b->size % 4) return false;
     size_t end = b->size - 4;
     b->pos = end; uint32_t hash = get(b); b->pos = 0;
-    if (hash != checksum(b->data, end) || get(b) != 0x4e535052u || get(b) != SAVE_VERSION) return false;
+    if (hash != checksum(b->data, end) || get(b) != 0x4e535052u) return false;
+    uint32_t version = get(b);
+    if (version != 1 && version != SAVE_VERSION) return false;
     app_init(a); a->save_sequence = get(b);
     uint32_t career = get(b), active = get(b);
     if (career > 1 || active > 1) return false;
@@ -105,7 +124,7 @@ static bool decode(Buffer *b, App *a) {
 #define READ_S(f) s->f = (int32_t)get(b);
     SEASON_FIELDS(READ_S)
 #undef READ_S
-    for (int i = 0; i < ROSTER_COUNT; ++i) {
+    for (int i = 0; i < 6; ++i) {
         s->roster[i].name = (int32_t)get(b); s->roster[i].rating = (int32_t)get(b);
         s->roster[i].xp = (int32_t)get(b); s->roster[i].condition = (int32_t)get(b);
     }
@@ -123,6 +142,21 @@ static bool decode(Buffer *b, App *a) {
     for (int i = 0; i < DEFENDER_COUNT; ++i) { g->defenders[i] = actor_get(b); g->blocked[i] = (int32_t)get(b); }
     for (int i = 0; i < BLOCKER_COUNT; ++i) g->blockers[i] = actor_get(b);
     for (int i = 0; i < 6; ++i) g->ratings[i] = (int32_t)get(b);
+    if (version == 1) {
+        if (g->phase > PHASE_FINAL || g->result > RESULT_MISSED_KICK) return false;
+        season_migrate_v1(s); g->ratings[ROLE_K] = 60;
+    } else {
+        s->salary_cap = (int32_t)get(b);
+        Player *k = &s->roster[ROLE_K];
+        k->name = (int32_t)get(b); k->rating = (int32_t)get(b); k->xp = (int32_t)get(b); k->condition = (int32_t)get(b);
+        for (int i = 0; i < ROSTER_COUNT; ++i) { s->roster[i].salary = (int32_t)get(b); s->roster[i].years = (int32_t)get(b); }
+        g->ratings[ROLE_K] = (int32_t)get(b);
+        g->kick_kind = (int32_t)get(b); g->kick_meter = (int32_t)get(b); g->kick_direction = (int32_t)get(b);
+        g->kick_ticks = (int32_t)get(b); g->kick_distance = (int32_t)get(b); g->kick_return = (int32_t)get(b);
+        uint32_t pending = get(b), touchback = get(b);
+        if (pending > 1 || touchback > 1) return false;
+        g->pending_pat = pending != 0; g->kick_touchback = touchback != 0;
+    }
     return b->ok && b->pos == end && valid(a);
 }
 static bool path_for(char path[512], const char *prefix, unsigned slot) {

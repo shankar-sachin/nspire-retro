@@ -64,7 +64,7 @@ int main(void) {
     capture = "build/roster.ppm"; render_app(&a);
     a.screen = SCREEN_SCHEDULE; a.selection = 1;
     capture = "build/standings.ppm"; render_app(&a);
-    for (int screen = SCREEN_TITLE; screen <= SCREEN_CONFIRM; ++screen) {
+    for (int screen = SCREEN_TITLE; screen <= SCREEN_RELEASE; ++screen) {
         a.screen = (Screen)screen; a.selection = 0;
         render_app(&a);
     }
@@ -74,6 +74,13 @@ int main(void) {
     capture = "build/final.ppm"; render_app(&a);
     a.screen = SCREEN_PAUSE; a.selection = 5;
     capture = "build/pause.ppm"; render_app(&a);
+    a.screen = SCREEN_ROSTER; a.selection = ROLE_K;
+    capture = "build/roster-v110.ppm"; render_app(&a);
+    a.screen = SCREEN_PLAYER; a.roster_selection = ROLE_K; a.selection = 2;
+    capture = "build/contract.ppm"; render_app(&a);
+    app_start_match(&a); game_kick(&a.game, false);
+    a.game.kick_meter = 48;
+    capture = "build/kick.ppm"; render_app(&a);
     a.settings.animations = 0; render_app(&a);
     render_shutdown(); assert(!lcd_active && frames > 1100);
     puts("Input edges and rendering passed; previews written to build/*.ppm.");

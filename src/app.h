@@ -3,7 +3,7 @@
 #include "game.h"
 #include "season.h"
 typedef enum { SCREEN_TITLE, SCREEN_TEAM, SCREEN_HUB, SCREEN_ROSTER, SCREEN_SCHEDULE,
-    SCREEN_SETTINGS, SCREEN_HELP, SCREEN_MATCH, SCREEN_PAUSE, SCREEN_CONFIRM } Screen;
+    SCREEN_SETTINGS, SCREEN_HELP, SCREEN_MATCH, SCREEN_PAUSE, SCREEN_CONFIRM, SCREEN_PLAYER, SCREEN_RELEASE } Screen;
 typedef struct { int difficulty, quarter_seconds, animations; } Settings;
 typedef struct {
     Season season;
