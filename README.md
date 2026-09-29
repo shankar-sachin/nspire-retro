@@ -276,7 +276,7 @@ src/game.h/.c    On-field play, opponent snaps, match clock, scoring, football A
 src/season.h/.c  32 teams, schedules, standings, playoffs, roster, progression
 src/save.h/.c    Versioned serialization, validation, alternating save slots
 src/input.h/.c   Held movement and key-press edges
-website/dist/   Static landing page, styles, team filters, actual renderer image
+docs/dist/      Static landing page, styles, team filters, actual renderer image
 src/render.h/.c  Clipped RGB565 graphics, menus, HUD, sprite and ball animations
 ```
 
@@ -332,10 +332,10 @@ SDK references:
 
 ## Landing page
 
-The landing page lives in `website/dist/` with no build dependencies. Preview it:
+The landing page lives in `docs/dist/` with no build dependencies. Preview it:
 
 ```sh
-python3 -m http.server 4173 --directory website/dist
+python3 -m http.server 4173 --directory docs/dist
 ```
 
 Open `http://127.0.0.1:4173/`. It includes all 32 teams with conference filters,

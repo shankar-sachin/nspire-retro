@@ -46,11 +46,11 @@ jobs:
         run: |
           test -f Makefile
           test -f README.md
-          test -f website/.openai/hosting.json
+          test -f docs/hosting.json
           grep -q 'TEAM_COUNT 32' src/season.h
           grep -q 'PLAY_COUNT 10' src/game.h
       - name: Validate landing-page JavaScript
-        run: node --check website/dist/app.js
+        run: node --check docs/dist/app.js
       - name: Check whitespace
         run: git diff --check
 
