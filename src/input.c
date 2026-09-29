@@ -18,6 +18,8 @@ Input input_poll(void) {
     if (right) held |= RIGHT;
     if (isKeyPressed(KEY_NSPIRE_ESC)) held |= BACK;
     pressed = held & ~previous;
+    in.action_released = (previous & ACTION) && !(held & ACTION);
+    in.action_held = (held & ACTION) != 0;
     previous = held;
     in.dx = (int)right - (int)left;
     in.dy = (int)down - (int)up;

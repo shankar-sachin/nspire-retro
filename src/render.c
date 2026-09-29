@@ -8,8 +8,8 @@
 #define INK RGB(2,6,9)
 #define PAPER RGB(29,60,28)
 #define GOLD RGB(31,49,5)
-#define TURF RGB(2,22,12)
-#define STRIPE RGB(3,26,14)
+#define TURF RGB(3,29,8)
+#define STRIPE RGB(4,34,10)
 #define BLUE RGB(4,42,31)
 #define RED RGB(30,12,10)
 /* One static 150 KiB buffer. No per-frame allocations or direct LCD register access. */
@@ -47,6 +47,8 @@ static void text(int x, int y, const char *s, uint16_t color, int scale) {
         if (*s >= 'A' && *s <= 'Z') glyph = letters[*s - 'A'];
         else if (*s >= '0' && *s <= '9') glyph = numbers[*s - '0'];
         else {
+            if (*s == '.') punctuation[2] = 64;
+            if (*s == '*') { punctuation[0] = punctuation[4] = 20; punctuation[1] = punctuation[3] = 28; punctuation[2] = 62; }
             if (*s == '-') punctuation[1] = punctuation[2] = punctuation[3] = 8;
             if (*s == '+') { punctuation[1] = punctuation[3] = 8; punctuation[2] = 28; }
             if (*s == ':') punctuation[2] = 36;
@@ -90,41 +92,64 @@ static void draw_game(const Game *g) {
     uint16_t away = season_team_color(g->away_team);
     char line[64];
     int focus = g->in_flight ? g->ball.x : g->carrier.x;
-    int camera = clamp(focus / FP - 100, -24, FIELD_LENGTH - WIDTH + 24);
+    int camera = clamp(g->aiming ? (g->carrier.x + g->aim.x) / (2 * FP) - WIDTH / 2 : focus / FP - 100, -24, FIELD_LENGTH - WIDTH + 24);
     rect(0, 0, WIDTH, HEIGHT, INK);
     rect(0, FIELD_TOP, WIDTH, FIELD_WIDTH, TURF);
     for (int yard = 0; yard < 100; yard += 5) {
         int x = yard * PX_PER_YARD - camera;
         if ((yard / 5) % 2 == 0) rect(x, FIELD_TOP, 5 * PX_PER_YARD, FIELD_WIDTH, STRIPE);
     }
-    rect(-camera - 60, FIELD_TOP, 60, FIELD_WIDTH, BLUE);
-    rect(FIELD_LENGTH - camera, FIELD_TOP, 60, FIELD_WIDTH, BLUE);
+    rect(-camera - 60, FIELD_TOP, 60, FIELD_WIDTH, home);
+    rect(FIELD_LENGTH - camera, FIELD_TOP, 60, FIELD_WIDTH, away);
     for (int yard = 0; yard <= 100; yard += 10) {
         int x = yard * PX_PER_YARD - camera;
-        rect(x, FIELD_TOP, 1, FIELD_WIDTH, PAPER);
+        rect(x, FIELD_TOP + 4, 1, FIELD_WIDTH - 8, RGB(17,45,19));
         snprintf(line, sizeof(line), "%d", yard <= 50 ? yard : 100 - yard);
-        text(x + 4, FIELD_TOP + 4, line, PAPER, 1);
+        text(x + 4, FIELD_TOP + 13, line, PAPER, 1);
+        text(x + 4, FIELD_TOP + FIELD_WIDTH - 22, line, PAPER, 1);
         for (int y = 48; y <= 104; y += 56) rect(x - 2, FIELD_TOP + y, 5, 1, PAPER);
     }
-    rect(0, FIELD_TOP, WIDTH, 2, PAPER);
-    rect(0, FIELD_TOP + FIELD_WIDTH - 2, WIDTH, 2, PAPER);
+    for (int yard = 1; yard < 100; ++yard) {
+        int x = yard * PX_PER_YARD - camera;
+        rect(x, FIELD_TOP + 52, 1, 3, PAPER); rect(x, FIELD_TOP + 98, 1, 3, PAPER);
+    }
+    int middle = FIELD_LENGTH / 2 - camera;
+    rect(middle - 34, FIELD_TOP + 65, 68, 22, home);
+    text(middle - (g->bowl_game ? 30 : 16), FIELD_TOP + 71, g->bowl_game ? "TI BOWL" : season_team_abbr(g->home_team), g->bowl_game ? GOLD : PAPER, 1);
+    text(-camera - 22, FIELD_TOP + 70, season_team_abbr(g->home_team), PAPER, 1);
+    text(FIELD_LENGTH - camera + 5, FIELD_TOP + 70, season_team_abbr(g->away_team), PAPER, 1);
+    for (int x = 0; x < WIDTH; x += 6) {
+        uint16_t crowd = ((x + camera) / 6) % 3 ? PAPER : home;
+        rect(x, FIELD_TOP, 3, 3, crowd); rect(x + 2, FIELD_TOP + FIELD_WIDTH - 3, 3, 3, crowd);
+    }
+    for (int end = 0; end <= FIELD_LENGTH; end += FIELD_LENGTH) {
+        rect(end - camera - 1, FIELD_TOP + 4, 3, 4, GOLD);
+        rect(end - camera - 1, FIELD_TOP + FIELD_WIDTH - 8, 3, 4, GOLD);
+    }
+    int post = FIELD_LENGTH - camera + 22;
+    rect(post, FIELD_TOP + 58, 2, 36, GOLD); rect(post - 6, FIELD_TOP + 58, 8, 2, GOLD);
+    rect(post - 6, FIELD_TOP + 92, 8, 2, GOLD);
+    rect(0, FIELD_TOP + 3, WIDTH, 1, PAPER);
+    rect(0, FIELD_TOP + FIELD_WIDTH - 4, WIDTH, 1, PAPER);
     rect(g->spot / FP - camera, FIELD_TOP + 2, 2, FIELD_WIDTH - 4, BLUE);
     rect(g->line_to_gain / FP - camera, FIELD_TOP + 2, 2, FIELD_WIDTH - 4, GOLD);
-    for (int i = 0; i < RECEIVER_COUNT; ++i) {
-        if (g->selected_play < PASS_SLANT || i == g->caught_receiver) continue;
+    for (int i = 0; i < game_receiver_count(g); ++i) {
+        if (i == g->caught_receiver) continue;
         player(g->receivers[i], camera, home, false);
-        if (i == g->target && !g->passed) {
+        if (game_is_pass(g->selected_play) && !g->passed) {
             int x = clamp(g->receivers[i].x / FP - camera - 2, 2, WIDTH - 8);
-            text(x, g->receivers[i].y / FP + FIELD_TOP - 18, i ? "2" : "1", GOLD, 1);
+            text(x, g->receivers[i].y / FP + FIELD_TOP - 18, i == 0 ? "WR1" : (i == 1 ? "WR2" : "TE"), GOLD, 1);
         }
     }
-    for (int i = 0; i < BLOCKER_COUNT; ++i) player(g->blockers[i], camera, home, false);
-    for (int i = 0; i < DEFENDER_COUNT; ++i) {
+    for (int i = 0; i < game_blocker_count(g); ++i) player(g->blockers[i], camera, home, false);
+    for (int i = 0; i < game_defender_count(g); ++i) {
         player(g->defenders[i], camera, PAPER, false);
         int x = g->defenders[i].x / FP - camera, y = g->defenders[i].y / FP + FIELD_TOP;
         rect(x - 2, y - 7, 5, 3, away);
         if (g->blocked[i]) rect(x - 3, y - 10, 6, 2, GOLD);
     }
+    if (!g->legacy_units) for (int i = 0; i < 2; ++i) player(g->support[i], camera, home, false);
+    if (g->caught_receiver >= 0) player(g->throw_start, camera, home, false);
     player(g->carrier, camera, home, !g->in_flight);
     if (g->in_flight) {
         int x = g->ball.x / FP - camera, y = g->ball.y / FP + FIELD_TOP;
@@ -135,29 +160,41 @@ static void draw_game(const Game *g) {
     }
     /* HUD is repainted after actors so no sprite can overlap the text. */
     rect(0, 0, WIDTH, FIELD_TOP, INK);
+    if (g->aiming) {
+        for (int i = 1; i < 12; ++i) {
+            int x = (g->carrier.x + (g->aim.x - g->carrier.x) * i / 12) / FP - camera;
+            int y = (g->carrier.y + (g->aim.y - g->carrier.y) * i / 12) / FP + FIELD_TOP;
+            rect(x, y - i * (12 - i) / 3, 2, 2, GOLD);
+        }
+        int x = g->aim.x / FP - camera, y = g->aim.y / FP + FIELD_TOP;
+        rect(x - 7, y, 15, 1, GOLD); rect(x, y - 7, 1, 15, GOLD);
+        rect(x - 4, y - 4, 9, 1, GOLD); rect(x - 4, y + 4, 9, 1, GOLD);
+    }
     snprintf(line, sizeof(line), "%s %d  %s %d", season_team_abbr(g->home_team), g->score, season_team_abbr(g->away_team), g->opponent_score);
     text(8, 5, line, GOLD, 1);
     snprintf(line, sizeof(line), "Q%d %d:%02d  DRIVE %d", g->quarter, (g->clock_ticks + GAME_HZ - 1) / GAME_HZ / 60, (g->clock_ticks + GAME_HZ - 1) / GAME_HZ % 60, g->drive);
+    if (g->shootout_active) snprintf(line, sizeof(line), "PLAYOFF SHOOTOUT ROUND %d", g->shootout_round);
     text(8, 17, line, PAPER, 1);
     snprintf(line, sizeof(line), "DOWN %d  TO GO %d  BALL %d", g->down, game_yards_to_go(g), g->spot / (PX_PER_YARD * FP));
     text(8, 30, line, PAPER, 1);
     rect(0, 199, WIDTH, 41, INK);
-    text(8, 204, "ARROWS MOVE  SHIFT BOOST  ESC PAUSE", PAPER, 1);
+    text(8, 204, g->aiming ? "ARROWS AIM  RELEASE ENTER TO THROW" : "ARROWS MOVE  SHIFT BOOST  ESC PAUSE", PAPER, 1);
     rect(270, 30, 42, 5, PAPER); rect(271, 31, g->energy * 40 / 100, 3, GOLD);
-    if (g->selected_play >= PASS_SLANT && !g->passed)
-        text(8, 217, g->carrier.x <= g->spot ? "CTRL TARGET  ENTER THROW" : "PAST LINE - RUN ONLY", GOLD, 1);
+    if (game_is_pass(g->selected_play) && !g->passed)
+        text(8, 217, g->carrier.x <= g->spot ? g->aiming ? "SHIFT LOB  CTRL CANCEL  SLOW MOTION" : "HOLD ENTER AIM  RELEASE THROW" : "PAST LINE - RUN ONLY", GOLD, 1);
     else text(8, 217, "ATTACK RIGHT  GOLD IS FIRST DOWN", GOLD, 1);
     if (g->phase == PHASE_CALL) {
         rect(32, 53, 256, 138, PAPER); rect(34, 55, 252, 134, INK);
         text(48, 64, "CALL YOUR PLAY", GOLD, 2);
-        for (int i = 0; i < PLAY_COUNT; ++i) {
-            int y = 88 + i * 18;
-            if (i == (int)g->selected_play) rect(43, y - 3, 232, 14, BLUE);
+        int first = ((int)g->selected_play / 5) * 5;
+        for (int i = first; i < first + 5; ++i) {
+            int y = 87 + (i - first) * 15;
+            if (i == (int)g->selected_play) rect(43, y - 3, 232, 13, BLUE);
             text(48, y, i == (int)g->selected_play ? ">" : " ", PAPER, 1);
             text(64, y, game_play_name((Play)i), PAPER, 1);
         }
-        text(48, 165, "UP/DOWN PICK  ENTER SNAP", GOLD, 1);
-        text(48, 178, "CTRL SPECIAL TEAMS", PAPER, 1);
+        text(43, 162, game_play_description(g->selected_play), GOLD, 1);
+        text(43, 178, "ENTER SNAP  CTRL KICKS  UP/DN MORE", PAPER, 1);
     } else if (g->phase == PHASE_RESULT) {
         rect(28, 80, 264, 93, PAPER); rect(30, 82, 260, 89, INK);
         text(44, 94, game_result_name(g->result), GOLD, 1);
@@ -166,12 +203,12 @@ static void draw_game(const Game *g) {
             snprintf(line, sizeof(line), "%d YARD ATTEMPT", g->kick_distance);
         else snprintf(line, sizeof(line), "GAIN %+d YARDS", g->last_gain);
         text(44, 114, line, PAPER, 1);
-        text(44, 136, g->pending_pat ? "ENTER EXTRA POINT ATTEMPT" : (g->new_drive ? "ENTER OPPONENT POSSESSION" : "ENTER TO CALL NEXT PLAY"), PAPER, 1);
+        text(44, 136, g->shootout_active ? "ENTER SHOOTOUT RESULT" : g->pending_pat ? "ENTER EXTRA POINT ATTEMPT" : (g->new_drive ? "ENTER OPPONENT POSSESSION" : "ENTER TO CALL NEXT PLAY"), PAPER, 1);
         text(44, 153, "ESC PAUSE", PAPER, 1);
     }
     if (g->phase == PHASE_SPECIAL || g->phase == PHASE_KICK) {
         rect(20, 57, 280, 136, PAPER); rect(22, 59, 276, 132, INK);
-        text(34, 70, "SPECIAL TEAMS", GOLD, 2);
+        text(34, 70, g->shootout_active ? "TIEBREAKER" : "SPECIAL TEAMS", GOLD, 2);
         if (g->phase == PHASE_SPECIAL) {
             text(34, 100, g->kick_kind == KICK_PUNT ? "> PUNT" : "  PUNT", PAPER, 1);
             snprintf(line, sizeof(line), "%s FIELD GOAL - %d YARDS", g->kick_kind == KICK_FIELD_GOAL ? ">" : " ", 117 - g->spot / (PX_PER_YARD * FP));
@@ -198,7 +235,7 @@ static void draw_game(const Game *g) {
             text(34, 105, line, PAPER, 1);
             rect(34, 128, 250, 8, TURF); rect(34, 128, g->cpu_spot * 250 / 100, 8, away);
             text(34, 151, g->cpu_done || !g->clock_ticks ? "ENTER CONTINUE" : "ENTER NEXT SNAP OR WATCH", GOLD, 1);
-            text(34, 174, "YOUR DEF RATING AFFECTS STOPS", PAPER, 1);
+            text(34, 174, g->cpu_pass ? "PASS - DL PRESSURE AND DB COVERAGE" : "RUN - DL FRONT AND LB PURSUIT", PAPER, 1);
         } else if (g->phase == PHASE_BREAK) {
             text(42, 78, g->quarter == 2 ? "HALFTIME" : "QUARTER BREAK", GOLD, 2);
             text(42, 112, g->quarter == 2 ? "OPPONENT RECEIVES NEXT" : "POSSESSION CARRIES FORWARD", PAPER, 1);
@@ -230,7 +267,10 @@ void render_app(const App *a) {
     char line[64]; const Season *s = &a->season;
     animate = a->settings.animations != 0;
     switch (a->screen) {
-    case SCREEN_MATCH: draw_game(&a->game); break;
+    case SCREEN_MATCH:
+        draw_game(&a->game);
+        if (a->aim_rearm) { rect(0, 199, WIDTH, 41, INK); text(8, 207, "HOLD ENTER TO RESUME AIMING", GOLD, 1); }
+        break;
     case SCREEN_PAUSE: {
         static const char *const rows[] = {"RESUME", "SAVE AND EXIT", "SETTINGS", "CONTROLS", "SAVE AND CLUBHOUSE", "EXIT WITHOUT SAVING"};
         draw_game(&a->game); rect(20, 52, 280, 155, INK); text(36, 63, "PAUSED", GOLD, 2);
@@ -239,10 +279,11 @@ void render_app(const App *a) {
     }
     case SCREEN_TITLE: {
         static const char *const rows[] = {"CONTINUE CAREER", "NEW CAREER", "SETTINGS", "CONTROLS", "SAVE AND EXIT", "EXIT WITHOUT SAVING"};
-        page("NSPIRE RETRO"); text(264, 17, "V1.1.0", PAPER, 1); text(18, 40, "EIGHT TEAMS - YOUR DYNASTY", PAPER, 1);
+        page("NSPIRE RETRO"); text(264, 17, "V1.2.0", PAPER, 1); text(18, 40, "32 CLUBS - 12 STARS - TI BOWL", PAPER, 1);
         rect(18, 56, 284, 32, TURF);
         for (int i = 0; i < 8; ++i) {
-            rect(21 + i * 35, 61, 28, 12, season_team_color(i)); text(22 + i * 35, 77, season_team_abbr(i), PAPER, 1);
+            int team = i + (animate ? a->frame / 30 * 8 : 0);
+            rect(21 + i * 35, 61, 28, 12, season_team_color(team)); text(22 + i * 35, 77, season_team_abbr(team), PAPER, 1);
         }
         for (int i = 0; i < 6; ++i) menu_row(99 + i * 19, i == 0 && !a->has_career ? "NO CAREER YET" : rows[i], i == a->selection);
         break;
@@ -252,41 +293,54 @@ void render_app(const App *a) {
         text(22, 84, "CURRENT PROGRESS WILL BE LOST", PAPER, 1);
         menu_row(120, "KEEP CURRENT CAREER", a->selection == 0);
         menu_row(145, "REPLACE AND CHOOSE TEAM", a->selection == 1); break;
-    case SCREEN_TEAM:
+    case SCREEN_TEAM: {
         page("CHOOSE YOUR TEAM");
-        for (int i = 0; i < TEAM_COUNT; ++i) {
-            menu_row(49 + i * 19, season_team_name(i), i == a->selection);
-            rect(284, 47 + i * 19, 14, 10, season_team_color(i));
+        int first = a->selection / 8 * 8;
+        for (int i = first; i < first + 8; ++i) {
+            menu_row(47 + (i - first) * 18, season_team_name(i), i == a->selection);
+            rect(284, 45 + (i - first) * 18, 14, 10, season_team_color(i));
         }
-        break;
-    case SCREEN_HUB: {
-        page("CLUBHOUSE"); text(18, 40, season_team_name(s->team), PAPER, 1);
-        snprintf(line, sizeof(line), "YEAR %d  WEEK %d/7  CREDITS %d", s->year, s->week < SEASON_WEEKS ? s->week + 1 : 7, s->credits); text(18, 55, line, GOLD, 1);
-        snprintf(line, sizeof(line), "W%d L%d T%d  RANK %d  TROPHIES %d", s->table[s->team].wins, s->table[s->team].losses, s->table[s->team].ties, season_rank(s, s->team), s->trophies); text(18, 70, line, PAPER, 1);
-        const char *rows[] = {a->match_active ? "RESUME MATCH" : (s->week == SEASON_WEEKS ? "START NEXT SEASON" : "PLAY NEXT MATCH"), "ROSTER AND RECRUITING", "SCHEDULE AND STANDINGS", "SETTINGS", "SAVE AND EXIT", "TITLE SCREEN"};
-        for (int i = 0; i < 6; ++i) menu_row(92 + i * 19, rows[i], i == a->selection);
-        if (s->week == SEASON_WEEKS) text(18, 207, season_rank(s, s->team) == 1 ? "SEASON CHAMPIONS - BONUS 25" : "SEASON COMPLETE", GOLD, 1);
+        snprintf(line, sizeof(line), "PAGE %d/4 - UP/DOWN FOR MORE", first / 8 + 1); text(18, 199, line, GOLD, 1);
         break;
     }
-    case SCREEN_ROSTER:
-        page("ROSTER");
-        snprintf(line, sizeof(line), "PAYROLL %dM / %dM  ROOM %dM", season_payroll(s), s->salary_cap, s->salary_cap - season_payroll(s)); text(18, 40, line, GOLD, 1);
-        text(36, 55, "ROLE PLAYER   RATE PAY YEARS", PAPER, 1);
-        for (int i = 0; i < ROSTER_COUNT; ++i) {
-            const Player *p = &s->roster[i];
-            snprintf(line, sizeof(line), "%-3s %-8s %2d  %2dM  %d", season_role_name(i), p->years ? season_player_name(p->name) : "RESERVE", p->rating, p->salary, p->years);
-            menu_row(73 + i * 17, line, i == a->selection);
-        }
-        snprintf(line, sizeof(line), "CREDITS %d  ENTER MANAGE PLAYER", s->credits); text(18, 200, line, GOLD, 1);
+    case SCREEN_HUB: {
+        page("CLUBHOUSE"); text(18, 40, season_team_name(s->team), PAPER, 1);
+        if (s->stage == STAGE_REGULAR) snprintf(line, sizeof(line), "YEAR %d WEEK %d/%d  CREDITS %d", s->year, s->week + 1, season_regular_weeks(s), s->credits);
+        else snprintf(line, sizeof(line), "%s  CREDITS %d", season_stage_name(s), s->credits);
+        text(18, 55, line, GOLD, 1);
+        snprintf(line, sizeof(line), "W%d L%d T%d  SEED %d  TROPHIES %d", s->table[s->team].wins, s->table[s->team].losses, s->table[s->team].ties, season_conference_rank(s, s->team), s->trophies); text(18, 70, line, PAPER, 1);
+        const char *next = s->stage == STAGE_COMPLETE ? "START OFFSEASON DRAFT" : (s->draft_active ? "CONTINUE DRAFT" : (season_current_opponent(s) < 0 ? "ADVANCE PLAYOFF ROUND" : "PLAY NEXT MATCH"));
+        const char *rows[] = {a->match_active ? "RESUME MATCH" : next, "ROSTER AND CONTRACTS", "LEAGUE AND PLAYOFF BRACKET", "SETTINGS", "SAVE AND EXIT", "TITLE SCREEN", "FREE AGENTS"};
+        for (int i = 0; i < 7; ++i) menu_row(92 + i * 16, rows[i], i == a->selection);
+        if (s->stage == STAGE_COMPLETE) snprintf(line, sizeof(line), "%s CHAMPIONS - %s", s->league_size == 8 ? "LEAGUE" : "TI BOWL", season_team_abbr(s->champion));
+        else if (season_current_opponent(s) >= 0) snprintf(line, sizeof(line), "NEXT: %s", season_team_name(season_current_opponent(s)));
+        else if (s->draft_active) snprintf(line, sizeof(line), "DRAFT PICKS LEFT %d", s->draft_picks);
+        else snprintf(line, sizeof(line), "BYE OR ELIMINATED - WATCH BRACKET");
+        text(18, 207, line, GOLD, 1);
         break;
+    }
+    case SCREEN_ROSTER: {
+        snprintf(line, sizeof(line), "ROSTER %d/12 STARS", season_star_count(s)); page(line);
+        snprintf(line, sizeof(line), "PAYROLL %dM / %dM  ROOM %dM", season_payroll(s), s->salary_cap, s->salary_cap - season_payroll(s)); text(18, 40, line, GOLD, 1);
+        text(36, 55, "ROLE PLAYER   STARS PAY YEARS", PAPER, 1);
+        int first = a->selection / 6 * 6;
+        for (int row = first; row < first + 6; ++row) {
+            int i = season_roster_role(row); const Player *p = &s->roster[i];
+            snprintf(line, sizeof(line), "%-3s %-8s %d.%d  %2dM  %d", season_role_name(i), p->years ? season_player_name(p->name) : "RESERVE", season_stars(p) / 2, season_stars(p) % 2 * 5, p->salary, p->years);
+            menu_row(76 + (row - first) * 18, line, row == a->selection);
+        }
+        snprintf(line, sizeof(line), "PAGE %d/2  CREDITS %d", first / 6 + 1, s->credits); text(18, 191, line, GOLD, 1);
+        text(18, 204, "ENTER MANAGE  CTRL FREE AGENTS", PAPER, 1);
+        break;
+    }
     case SCREEN_PLAYER: {
         int role = a->roster_selection; const Player *p = &s->roster[role];
         page("PLAYER CONTRACT");
-        snprintf(line, sizeof(line), "%s %s  RATING %d", season_role_name(role), p->years ? season_player_name(p->name) : "RESERVE", p->rating); text(18, 40, line, PAPER, 1);
+        snprintf(line, sizeof(line), "%s %s  %d.%d STARS", season_role_name(role), p->years ? season_player_name(p->name) : "RESERVE", season_stars(p) / 2, season_stars(p) % 2 * 5); text(18, 40, line, PAPER, 1);
         snprintf(line, sizeof(line), "PAY %dM  YEARS %d  FITNESS %d  XP %d", p->salary, p->years, p->condition, p->xp); text(18, 54, line, PAPER, 1);
         snprintf(line, sizeof(line), "CAP %d/%dM  CREDITS %d", season_payroll(s), s->salary_cap, s->credits); text(18, 69, line, GOLD, 1);
         snprintf(line, sizeof(line), "TRAIN +2 RATING - 6 CREDITS"); menu_row(92, line, a->selection == 0);
-        snprintf(line, sizeof(line), "SIGN R%d - %dM / %d CREDITS", season_recruit_rating(s, role), season_salary(season_recruit_rating(s, role), role), season_recruit_cost(s, role)); menu_row(113, line, a->selection == 1);
+        menu_row(113, "BROWSE FREE AGENTS", a->selection == 1);
         snprintf(line, sizeof(line), "RENEW 2 YEARS - %dM / 3 CREDITS", season_salary(p->rating, role)); menu_row(134, line, a->selection == 2);
         menu_row(155, "RELEASE TO FREE RESERVE", a->selection == 3);
         menu_row(176, "RECOVER TEAM - 5 CREDITS", a->selection == 4);
@@ -300,23 +354,90 @@ void render_app(const App *a) {
         menu_row(120, "KEEP PLAYER", a->selection == 0);
         menu_row(146, "RELEASE AND CLEAR SALARY", a->selection == 1);
         break;
-    case SCREEN_SCHEDULE:
-        page(a->selection ? "STANDINGS" : "SCHEDULE");
-        if (!a->selection) {
-            for (int i = 0; i < SEASON_WEEKS; ++i) {
-                if (i < s->week) snprintf(line, sizeof(line), "%d %-3s  %d - %d", i + 1, season_team_abbr(season_opponent(s->team, i)), s->results[i][0], s->results[i][1]);
-                else snprintf(line, sizeof(line), "%d %-3s  %s", i + 1, season_team_abbr(season_opponent(s->team, i)), i == s->week ? "NEXT" : "UPCOMING");
-                menu_row(52 + i * 20, line, i == s->week);
+    case SCREEN_FREE_AGENTS:
+    case SCREEN_DRAFT: {
+        bool draft = a->screen == SCREEN_DRAFT;
+        page(draft ? "OFFSEASON DRAFT" : "FREE AGENTS");
+        snprintf(line, sizeof(line), "STARS %d/12  CAP %d/%dM", season_star_count(s), season_payroll(s), s->salary_cap); text(18, 40, line, GOLD, 1);
+        if (draft) snprintf(line, sizeof(line), "ROUND %d/3  PICKS LEFT %d", 4 - s->draft_picks, s->draft_picks);
+        else snprintf(line, sizeof(line), "CREDITS %d - REFRESH AFTER MATCH", s->credits);
+        text(18, 55, line, PAPER, 1);
+        int first = a->selection / 6 * 6;
+        for (int row = first; row < first + 6 && row < ROSTER_COUNT + (draft ? 1 : 0); ++row) {
+            if (row == ROSTER_COUNT) snprintf(line, sizeof(line), "PASS THIS DRAFT PICK");
+            else {
+                int role = season_roster_role(row); const Player *p = draft ? &s->prospects[role] : &s->free_agents[role];
+                bool taken = ((draft ? s->draft_taken : s->free_signed) & (1u << role)) != 0;
+                if (taken) snprintf(line, sizeof(line), "%-3s %-8s  %s", season_role_name(role), season_player_name(p->name), draft ? "DRAFTED" : "SIGNED");
+                else snprintf(line, sizeof(line), "%-3s %-8s %d.%d* %2dM", season_role_name(role), season_player_name(p->name), season_stars(p) / 2, season_stars(p) % 2 * 5, p->salary);
+            }
+            menu_row(77 + (row - first) * 18, line, a->selection == row);
+        }
+        text(18, 193, a->match_active ? "LOCKED UNTIL MATCH FINISHES" : "ENTER INSPECT  UP/DOWN MORE", GOLD, 1);
+        text(18, 206, draft ? "ROOKIE DEALS - NO CREDIT FEE" : "SIGNING COSTS SHOWN BEFORE CONFIRM", PAPER, 1);
+        break;
+    }
+    case SCREEN_SIGN: {
+        bool draft = a->return_screen == SCREEN_DRAFT; int role = a->roster_selection;
+        page(role < 0 ? "PASS DRAFT PICK" : draft ? "DRAFT PROSPECT" : "SIGN FREE AGENT");
+        if (role < 0) text(18, 63, "USE THIS PICK WITHOUT A PLAYER?", GOLD, 1);
+        else {
+            const Player *p = draft ? &s->prospects[role] : &s->free_agents[role];
+            snprintf(line, sizeof(line), "%s %s  %d.%d STARS", season_role_name(role), season_player_name(p->name), season_stars(p) / 2, season_stars(p) % 2 * 5); text(18, 45, line, GOLD, 1);
+            snprintf(line, sizeof(line), "%dM / 2 YEARS  FEE %d CREDITS", p->salary, draft ? 0 : season_recruit_cost(s, role)); text(18, 64, line, PAPER, 1);
+            snprintf(line, sizeof(line), "PAYROLL AFTER %d/%dM", season_payroll(s) - s->roster[role].salary + p->salary, s->salary_cap); text(18, 82, line, PAPER, 1);
+            text(18, 104, s->roster[role].years ? "REPLACES YOUR STAR IN THIS POSITION" : "ADDS A STAR TO A RESERVE POSITION", GOLD, 1);
+            if ((draft ? s->draft_taken : s->free_signed) & (1u << role)) text(18, 122, "PLAYER ALREADY TAKEN", RED, 1);
+        }
+        menu_row(150, "GO BACK", a->selection == 0);
+        menu_row(176, role < 0 ? "PASS PICK" : draft ? "DRAFT PLAYER" : "SIGN PLAYER", a->selection == 1);
+        break;
+    }
+    case SCREEN_SCHEDULE: {
+        static const char *const titles[] = {"SCHEDULE", "STANDINGS", "TI BOWL BRACKET", "LEAGUE SCORES"};
+        page(titles[a->selection]);
+        if (a->selection == 0) {
+            int first = a->page * 8, count = season_regular_weeks(s);
+            for (int i = first; i < first + 8 && i < count; ++i) {
+                int opponent = season_schedule_opponent(s, s->team, i);
+                if (i < s->week) snprintf(line, sizeof(line), "W%02d %-3s  %d - %d", i + 1, season_team_abbr(opponent), s->results[i][0], s->results[i][1]);
+                else snprintf(line, sizeof(line), "W%02d %-3s  %s", i + 1, season_team_abbr(opponent), i == s->week ? "NEXT" : "UPCOMING");
+                menu_row(52 + (i - first) * 18, line, i == s->week);
+            }
+        } else if (a->selection == 1) {
+            int conf = a->page / 2, first = a->page % 2 * 8 + 1;
+            snprintf(line, sizeof(line), "%s SEED  W  L  T  PF   PA", conf ? "AFC" : "NFC"); text(22, 40, line, GOLD, 1);
+            if (s->league_size == 8) { conf = -1; first = 1; }
+            for (int rank = first; rank < first + 8; ++rank) for (int t = 0; t < s->league_size; ++t)
+                if ((conf < 0 ? season_rank(s, t) : season_conference_rank(s, t)) == rank && (conf < 0 || season_conference(t) == conf)) {
+                    const Standing *v = &s->table[t];
+                    snprintf(line, sizeof(line), "%2d %-3s %2d %2d %2d %3d %3d", rank, season_team_abbr(t), v->wins, v->losses, v->ties, v->points_for, v->points_against);
+                    menu_row(57 + (rank - first) * 18, line, t == s->team);
+                }
+        } else if (a->selection == 2) {
+            if (s->league_size == 8) text(18, 62, "PLAYOFFS BEGIN NEXT SEASON", GOLD, 1);
+            else for (int i = a->page * 7; i < a->page * 7 + 7 && i < 13; ++i) {
+                int ta, tb; season_bracket_pair(s, i, &ta, &tb);
+                const char *round = i < 6 ? "WC" : (i < 10 ? "DIV" : (i < 12 ? "CONF" : "BOWL"));
+                const char *aa = ta < 0 ? "TBD" : season_team_abbr(ta), *bb = tb < 0 ? "TBD" : season_team_abbr(tb);
+                if (s->playoff_winners[i] < 0) snprintf(line, sizeof(line), "%-4s %s VS %s", round, aa, bb);
+                else snprintf(line, sizeof(line), "%-4s %s %d-%d %s", round, aa, s->playoff_scores[i][0], s->playoff_scores[i][1], bb);
+                menu_row(56 + (i % 7) * 19, line, ta == s->team || tb == s->team);
             }
         } else {
-            text(22, 40, "TEAM     W  L  T  PF   PA", GOLD, 1);
-            for (int rank = 1; rank <= TEAM_COUNT; ++rank) for (int t = 0; t < TEAM_COUNT; ++t) if (season_rank(s, t) == rank) {
-                const Standing *v = &s->table[t];
-                snprintf(line, sizeof(line), "%d %-3s   %d  %d  %d  %3d  %3d", rank, season_team_abbr(t), v->wins, v->losses, v->ties, v->points_for, v->points_against);
-                menu_row(58 + (rank - 1) * 18, line, t == s->team);
+            int w = a->page, match = 0;
+            snprintf(line, sizeof(line), "WEEK %d RESULTS", w + 1); text(18, 40, line, GOLD, 1);
+            for (int t = 0; t < s->league_size; ++t) {
+                int opponent = season_schedule_opponent(s, t, w);
+                if (t > opponent) continue;
+                int pa = s->week_scores[w][t], pb = s->week_scores[w][opponent];
+                if (pa < 0 || pb < 0) snprintf(line, sizeof(line), "%s - %s", season_team_abbr(t), season_team_abbr(opponent));
+                else snprintf(line, sizeof(line), "%s %d-%d %s", season_team_abbr(t), pa, pb, season_team_abbr(opponent));
+                text(18 + match / 8 * 152, 58 + match % 8 * 18, line, t == s->team || opponent == s->team ? GOLD : PAPER, 1); ++match;
             }
         }
-        text(18, 204, "LEFT/RIGHT SWITCH PAGE", GOLD, 1); break;
+        text(18, 204, "LEFT/RIGHT TAB  UP/DOWN PAGE", GOLD, 1); break;
+    }
     case SCREEN_SETTINGS: {
         static const char *const difficulties[] = {"ROOKIE", "PRO", "ALL STAR"};
         page("SETTINGS");
@@ -328,7 +449,7 @@ void render_app(const App *a) {
     }
     case SCREEN_HELP: {
         page("CONTROLS");
-        static const char *const rows[] = {"ARROWS MOVE / SELECT PLAY", "ENTER SNAP / THROW / CONTINUE", "CTRL SWITCH RECEIVER", "SHIFT RUN = LIMITED SPRINT", "SHIFT + ENTER = LOB PASS", "CALL SCREEN CTRL = PUNT OR FG", "ESC PAUSES / RETURNS", "TD 6 - KICK PAT 1 - FG 3", "DEFENSE IS SIMULATED", "AUTOSAVE AT PLAY TRANSITIONS"};
+        static const char *const rows[] = {"ARROWS MOVE / SELECT PLAY", "ENTER SNAP / CONTINUE", "HOLD ENTER + ARROWS AIM", "SHIFT RUN = LIMITED SPRINT", "RELEASE ENTER THROW - SHIFT LOB", "CALL SCREEN CTRL = PUNT OR FG", "ESC PAUSES / RETURNS", "TD 6 - KICK PAT 1 - FG 3", "DEFENSE IS SIMULATED", "AUTOSAVE AT PLAY TRANSITIONS"};
         for (int i = 0; i < 10; ++i) text(18, 46 + i * 16, rows[i], PAPER, 1);
         break;
     }

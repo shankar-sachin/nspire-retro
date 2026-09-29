@@ -7,10 +7,21 @@ and immediately threw. It then called the unchanged v1.0.0 `save_write` function
 
 The fixture is a format-1 save, sequence 1, captured during an airborne pass.
 Tests copy it to a temporary slot, import it, verify preserved career/pass state
-and default contracts/kicker, then round-trip it through the format-2 writer.
+and default contracts/kicker, then round-trip it through the current writer.
 It is deliberately independent of the new serializer so a layout change cannot
 silently update both writer and migration test to the same incorrect format.
 
 `v1-touchdown.bin` uses the same encoder after a run crosses the goal line. Its
 score already includes v1.0.0's automatic extra point. Migration tests verify that
 continuing this result enters the opponent possession without another conversion.
+
+`v2-career.bin` was generated with the published `v1.1.0` sources and their
+unchanged format-2 writer. A SEA career won week one 21–14, started week two,
+selected a punt, and advanced its meter eleven idle frames before saving.
+Tests preserve its contracts, result, exact kick timing, and eight-team schedule,
+then finish that legacy season and expand the following season to 32 teams.
+
+`v3-champion.bin` was written by the unmodified v1.2.0 preview encoder at commit
+9911640 during the recorded walkthrough. It contains a completed SEA championship
+and twelve stars. Format-4 migration retains those stars and the trophy instead
+of applying the three-star rule retroactively.

@@ -1,4 +1,5 @@
 #include <libndls.h>
+#include <time.h>
 #include "app.h"
 #include "save.h"
 #include "input.h"
@@ -10,6 +11,7 @@ int main(int argc, char **argv) {
     bool storage_ready = argc > 0 && argv && argv[0] && enable_relative_paths(argv) == 0;
     app_init(&app);
     if (storage_ready) save_load(&app, "nspire-retro-save");
+    app.career_seed ^= (uint32_t)time(NULL);
     if (!render_init()) { lcd_init(SCR_TYPE_INVALID); return 1; }
     if (!storage_ready) { app.notice = 2; app.notice_ticks = 300; }
     input_init();

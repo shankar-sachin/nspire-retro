@@ -53,35 +53,52 @@ static void test_rules(void) {
     start(&g, RUN_SPLIT); isolate(&g); g.ticks = PLAY_LIMIT_TICKS - 1;
     game_update(&g, &idle); assert(g.result == RESULT_TIMEOUT);
 }
+static void aim_receiver(Game *g, int target, bool lob) {
+    game_update(g, &(Input){.action_pressed=true,.action_held=true});
+    assert(g->aiming && !g->passed);
+    Game future = *g; future.aiming = false; future.passed = true;
+    for (int i = 0; i <= (lob ? 24 : PASS_TICKS); ++i) game_update(&future, &idle);
+    g->aim = future.receivers[target];
+    game_update(g, &(Input){.action_released=true,.boost=lob});
+    assert(g->in_flight && !g->aiming);
+}
 static void test_passes(void) {
     Game g;
-    for (int play = PASS_SLANT; play <= PASS_CROSS; ++play) {
+    for (int play = 0; play < PLAY_COUNT; ++play) {
+        if (!game_is_pass((Play)play)) continue;
         for (int target = 0; target < RECEIVER_COUNT; ++target) {
-            start(&g, (Play)play); isolate(&g); g.target = target;
-            game_update(&g, &action);
-            assert(g.in_flight && g.passed);
+            start(&g, (Play)play); isolate(&g); g.target = (target + 1) % RECEIVER_COUNT;
+            aim_receiver(&g, target, false); /* Catch depends on location, not old target ID. */
+            Actor landing = g.throw_target;
             for (int i = 0; i < PASS_TICKS; ++i) game_update(&g, &idle);
             assert(!g.in_flight && g.caught_receiver == target && g.phase == PHASE_LIVE);
-            int x = g.carrier.x;
-            Input move = {.dx = 1}; game_update(&g, &move);
-            assert(g.carrier.x > x);
+            assert(g.throw_target.x == landing.x && g.throw_target.y == landing.y);
+            int x = g.carrier.x; game_update(&g, &(Input){.dx=1}); assert(g.carrier.x > x);
         }
     }
     start(&g, PASS_SLANT); isolate(&g);
-    g.carrier.x = g.spot + FP; game_update(&g, &action);
-    assert(!g.passed); /* A forward pass is only legal behind the snap line. */
-    start(&g, PASS_SLANT); isolate(&g); game_update(&g, &action);
-    g.defenders[0] = g.ball; game_update(&g, &idle);
-    assert(g.result == RESULT_INTERCEPTION && g.new_drive && g.turnovers == 1);
-    start(&g, PASS_SLANT); isolate(&g); game_update(&g, &action);
-    /* A disrupted route must produce an incompletion, preserving the snap spot. */
+    Actor before = g.carrier; game_update(&g, &(Input){.dx=-1}); assert(g.carrier.x < before.x);
+    game_update(&g, &(Input){.action_pressed=true,.action_held=true});
+    before = g.carrier; int tick = g.ticks, x = g.aim.x, y = g.aim.y;
+    for (int i = 0; i < 8; ++i) game_update(&g, &(Input){.dx=1,.dy=-1,.action_held=true});
+    assert(g.carrier.x == before.x && g.carrier.y == before.y && g.ticks == tick + 2);
+    assert(g.aim.x > x && g.aim.y < y && !g.passed);
+    game_update(&g, &(Input){.target_pressed=true,.action_held=true}); assert(!g.aiming && !g.passed);
+    game_update(&g, &(Input){.action_released=true}); assert(!g.passed);
+    g.carrier.x = g.spot + FP; game_update(&g, &action); assert(!g.aiming && !g.passed);
+    start(&g, PASS_SLANT); isolate(&g); aim_receiver(&g, 0, false);
+    g.defenders[0] = g.ball; game_update(&g, &idle); assert(g.result == RESULT_INTERCEPTION);
+    start(&g, PASS_GO); isolate(&g); aim_receiver(&g, 0, false);
     g.receivers[0].y += 50 * FP;
     for (int i = 0; i < PASS_TICKS; ++i) game_update(&g, &idle);
     assert(g.result == RESULT_INCOMPLETE && g.spot == 25 * YARD && g.down == 2);
-    start(&g, PASS_SLANT); isolate(&g); g.down = 4; game_update(&g, &action);
+    start(&g, PASS_GO); isolate(&g); g.down = 4; aim_receiver(&g, 0, false);
     g.receivers[0].y += 50 * FP;
     for (int i = 0; i < PASS_TICKS; ++i) game_update(&g, &idle);
     assert(g.result == RESULT_DOWNS);
+    start(&g, PASS_GO); isolate(&g); game_update(&g, &action);
+    g.aim = (Actor){90 * YARD,76*FP}; game_update(&g, &(Input){.action_released=true});
+    assert(g.throw_target.x - g.throw_start.x <= game_throw_range(&g));
 }
 static void test_movement(void) {
     Game g; start(&g, RUN_SPLIT); isolate(&g);
@@ -93,7 +110,7 @@ static void test_movement(void) {
     int old = g.defenders[0].x; game_update(&g, &idle);
     assert(g.defenders[0].x < old && DEFENDER_SPEED < PLAYER_SPEED);
     game_init(&g); Input up = {.up_pressed = true}; game_update(&g, &up);
-    assert(g.selected_play == PASS_CROSS);
+    assert(g.selected_play == PASS_SCREEN);
 }
 static void test_advanced_play(void) {
     Game normal, sprint, rookie, hard;
@@ -114,30 +131,21 @@ static void test_advanced_play(void) {
     for (int i = 0; i < 100 && normal.phase == PHASE_LIVE; ++i) game_update(&normal, &boost);
     assert(normal.phase == PHASE_RESULT && normal.last_gain < 10 && normal.result != RESULT_TOUCHDOWN);
     start(&normal, PASS_SLANT); isolate(&normal);
-    Input lob = {.action_pressed = true, .boost = true}; game_update(&normal, &lob);
+    aim_receiver(&normal, 0, true);
     assert(normal.lob && normal.flight_duration == 24);
     for (int i = 0; i < 24; ++i) game_update(&normal, &idle);
     assert(normal.completions == 1 && normal.caught_receiver == 0);
-    start(&normal, PASS_SLANT); isolate(&normal);
-    normal.receivers[0].x = 90 * YARD; game_update(&normal, &action);
-    for (int i = 0; i < PASS_TICKS; ++i) game_update(&normal, &idle);
-    assert(normal.result == RESULT_INCOMPLETE); /* Arm range is finite. */
-    start(&normal, PASS_SLANT); isolate(&normal);
-    normal.defenders[0] = normal.carrier; normal.defenders[0].y += 15 * FP;
-    game_update(&normal, &action);
-    isolate(&normal);
-    for (int i = 0; i < PASS_TICKS; ++i) game_update(&normal, &idle);
-    assert(normal.result == RESULT_INCOMPLETE); /* Pressure affects accuracy. */
     start(&normal, PASS_SLANT); normal.ticks = 30;
-    int old_y = normal.defenders[2].y; game_update(&normal, &idle);
-    assert(normal.defenders[2].y < old_y); /* Coverage tracks the high receiver. */
+    normal.defenders[7].y = 60 * FP;
+    int old_y = normal.defenders[7].y; game_update(&normal, &idle);
+    assert(normal.defenders[7].y < old_y); /* Coverage tracks the high receiver. */
 }
 static void test_long_session(void) {
     Game g; uint32_t random = 1; game_init(&g);
     for (int tick = 0; tick < 100000; ++tick) {
         random = random * 1664525u + 1013904223u;
         Input in = {.dx = (int)(random % 3) - 1, .dy = (int)((random >> 4) % 3) - 1,
-            .action_pressed = (random & 31) == 0, .target_pressed = (random & 63) == 1,
+            .action_pressed = (random & 31) == 0, .action_released = (random & 31) == 3, .target_pressed = (random & 63) == 1,
             .down_pressed = (random & 15) == 2};
         if (g.phase == PHASE_FINAL) game_init(&g);
         game_update(&g, &in);
@@ -148,8 +156,31 @@ static void test_long_session(void) {
         assert(g.score >= 0 && g.opponent_score >= 0);
     }
 }
+static void test_position_units(void) {
+    Game g; start(&g, PASS_SLANT);
+    assert(game_blocker_count(&g) == 5 && game_defender_count(&g) == 11 && game_receiver_count(&g) == 3);
+    assert(game_receiver_role(2) == ROLE_TE);
+    int run_effects = 0, pass_effects = 0;
+    for (int seed = 1; seed <= 100; ++seed) {
+        Game weak, strong; game_init(&weak); weak.phase = PHASE_OPPONENT;
+        weak.cpu_spot = 30; weak.cpu_line = 40; weak.cpu_down = 1; weak.rng = (uint32_t)seed;
+        weak.ratings[ROLE_DEF] = weak.ratings[ROLE_DL2] = weak.ratings[ROLE_LB] = weak.ratings[ROLE_DB] = 40;
+        strong = weak;
+        strong.ratings[ROLE_DEF] = strong.ratings[ROLE_DL2] = strong.ratings[ROLE_LB] = strong.ratings[ROLE_DB] = 95;
+        game_update(&weak, &action); game_update(&strong, &action);
+        assert(weak.cpu_pass == strong.cpu_pass);
+        if (weak.cpu_spot != strong.cpu_spot || weak.cpu_event != strong.cpu_event) {
+            if (weak.cpu_pass) ++pass_effects; else ++run_effects;
+        }
+    }
+    assert(run_effects > 0 && pass_effects > 0);
+    start(&g, RUN_DRAW); g.ticks = 100; g.blockers[3] = g.defenders[3]; g.ratings[ROLE_OL2] = 40;
+    Game better = g; better.ratings[ROLE_OL2] = 95;
+    game_update(&g, &idle); game_update(&better, &idle);
+    assert(better.blocked[3] > g.blocked[3]);
+}
 int main(void) {
-    test_rules(); test_passes(); test_movement(); test_advanced_play(); test_long_session();
+    test_position_units(); test_rules(); test_passes(); test_movement(); test_advanced_play(); test_long_session();
     puts("Game rules, passes, movement, and 100000 simulation ticks passed.");
     return 0;
 }

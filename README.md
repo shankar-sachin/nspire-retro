@@ -1,4 +1,4 @@
-# Nspire Retro v1.1.0
+# Nspire Retro v1.2.0
 
 An arcade football game for the **TI-Nspire CX II with Ndless**. Choose a team,
 manage a roster, play offensive snaps, watch simulated opponent possessions, and
@@ -7,44 +7,73 @@ no SDL, desktop graphics dependency, downloaded art, or floating-point game loop
 
 ## Teams and career
 
-The eight selectable clubs are the **New York Giants, Green Bay Packers, Seattle
-Seahawks, Kansas City Chiefs, Buffalo Bills, Baltimore Ravens, Philadelphia
-Eagles, and Detroit Lions**. Names are from the [NFL team directory](https://www.nfl.com/teams/).
-Uniforms are original pixel sprites using team-inspired colors. Player names and
-ratings are fictional game data, not a live NFL roster or current power ranking.
+All **32 NFL clubs** are selectable, including NYG, GB, SEA, both Los Angeles
+teams, Miami, Cleveland, Cincinnati, and the Jets. Names follow the
+[NFL team directory](https://www.nfl.com/teams/). Uniforms are original pixel
+sprites using team-inspired colors. Player names and ratings are fictional game
+data, not a live NFL roster or current power ranking.
 
-Each season is a custom eight-team, seven-week round robin: every club faces every
-other club once. The remaining three games each week are simulated. Standings
-track wins, losses, ties, points scored and allowed. Ranking uses two points per
-win and one per tie, then point differential, points scored, and stable team ID.
-The top team earns a trophy and 25 credits after week seven. Start another season
-to retain your roster, money, trophies, and career record; all players recover
-fitness, and opponents gradually become stronger. This is a compact custom league,
-not the NFL's 32-team schedule or postseason format.
+A new career has **17 regular-season weeks**: 15 distinct conference opponents
+and two distinct opponents from the other conference. All 16 weekly games have
+results; the other 15 games are simulated. This is a custom arcade schedule with
+no regular-season byes or divisions, not the NFL's actual schedule. Standings use
+two points per win and one per tie, then point differential, points scored, and
+stable team ID.
 
-The clubhouse provides roster management, schedule/results, standings, settings,
-and the next match. Seven roster slots affect gameplay:
+The **top seven clubs in each conference** qualify. Each number-one seed receives
+a Wild Card bye; seeds 2–7, 3–6, and 4–5 play. The Divisional round reseeds so the
+highest seed faces the lowest surviving seed. Conference winners meet in the
+**TI Bowl**. Only the TI Bowl champion earns the new season's trophy and 50 bonus
+credits. If you have a bye or are eliminated, Advance Playoff Round simulates the
+remaining fixtures. Start Next Season becomes available after the championship.
+Your roster, credits, trophies, and career record carry forward.
 
-| Role | Effect |
+The clubhouse has four league tabs: your schedule, conference standings, playoff
+bracket, and every week's scores. Left/Right switches tabs; Up/Down changes pages
+or the selected week.
+
+New careers start with **exactly three star players**, randomly assigned to three
+different positions. The other positions use free, rating-40 reserves. You can
+build up to **twelve stars** through free agency and the offseason draft. Every
+named player has a visible **0.5–5.0 star rating** derived from their ability;
+reserves display 0.0 stars. New-career seeds use launch time and menu timing, while
+saved careers keep their exact generated boards and roster.
+
+**Twelve star slots** sit within complete on-field units. Every new match has 11
+offensive players (QB, RB, two WRs, TE, five offensive linemen, and a fullback)
+and 11 defenders (four defensive linemen, three linebackers, three cornerbacks,
+and a safety). Reserve players fill positions beyond your star slots. The twelve
+managed positions are fixed, rather than an unrestricted position mix:
+
+| Star role | Effect |
 |---|---|
 | QB | Scramble speed, passing range, accuracy under pressure |
 | RB | Running speed |
-| WR1 / WR2 | Route speed, speed after a catch, catch radius |
-| OL | How long the two blockers hold defenders |
-| DEF | Opponent gains, turnovers, and kick success during simulated possessions |
-| K | Player punt distance, field-goal range, and kick accuracy |
+| WR1 / WR2 / TE | Route speed, speed after a catch, catch radius |
+| OL1 / OL2 | Blocking duration for the left/center and right line groups |
+| DL1 / DL2 | Defensive front strength during simulated opponent possessions |
+| LB | Run and pass defense during simulated opponent possessions |
+| DB | Pass defense during simulated opponent possessions |
+| K | Punt distance, field-goal range, and kick accuracy |
+
+The opponent's defenders play live pursuit, coverage, and blocking interactions
+while you control offense. Your own defense resolves snap by snap through the
+simulation, with DL/LB/DB ratings weighted differently for runs and passes.
 
 Wins earn 14 credits and five XP per player; losses/ties earn nine credits and
 three XP. Ten XP increases a rating by one. Training costs six credits for two
 rating points and five fitness. Team recovery costs five credits and restores
-25 fitness. Recruiting replaces the selected player with the displayed weekly
-prospect, resetting that slot's XP and restoring fitness. Low fitness reduces
+25 fitness. Free agency offers a generated candidate at each position. Inspect their stars,
+salary, and credit fee, then confirm the signing. Signing fills an empty star
+slot or replaces your star at that position; each candidate can be signed only
+once. The board refreshes after a completed match. Reopening menus or reloading
+a save does not reroll it. Low fitness reduces
 effective ratings; ratings cap at 95. Rosters are locked while a match is active.
 
 ### Salaries and contracts
 
-The seven-player roster has a **100M salary cap**, separate from coach credits.
-New careers use 80M. The roster shows each player's annual cap charge, remaining
+The twelve-player roster has a **200M salary cap**, separate from coach credits.
+Starting payroll depends on your three generated stars. The roster shows each player's annual cap charge, remaining
 contract years, total payroll, and available room. Enter opens that player's
 management screen with training, recruiting, renewal, release, and team recovery.
 
@@ -54,7 +83,16 @@ nor credits. Recruit signing costs remain coach credits; renewing costs three
 credits. Salaries stay fixed during a contract, even when training or XP improves
 the player. Renewals use the player's current rating and role to set a new salary.
 
-Starting a new season reduces remaining contract years by one. Expired players
+After the championship, **Start Offseason Draft** advances the year, reduces
+remaining contracts by one, and opens a saved draft board before week one. There
+are **three rounds with one pick each**. Select a prospect, inspect their stars
+and two-season rookie salary, and confirm. Draft picks cost no coach credits but
+must fit the cap. You can replace a current star or fill a reserve position.
+A prospect is selectable once per draft. Passing a pick requires confirmation;
+leaving the screen preserves it. All three picks must be used or passed before
+playing the new season. Returning to the draft cannot age contracts again.
+
+Starting the offseason reduces remaining contract years by one. Expired players
 become free rating-40 reserves, so the team always remains playable. Release also
 replaces a player with a reserve and clears the salary, after an in-app confirmation.
 There is no dead-money penalty or release credit refund. Reserves cannot train,
@@ -71,16 +109,28 @@ arcade cap model, not an implementation of NFL collective-bargaining rules.
   one. The attempt still occurs when the quarter or game clock expires on the
   touchdown. Opponent conversions remain automatic. Field goals score three and
   safeties two to the defense. Regular-season ties are allowed.
+- A tied playoff game uses an arcade kicking shootout: each side attempts one
+  field goal per round, and each make adds three points. Equal rounds repeat; an
+  unequal round decides the winner after both attempts. This is a custom
+  tiebreaker, not NFL overtime.
 - Offense always attacks right. The blue line marks the snap spot; gold marks
   the first-down target. The HUD shows both scores, quarter, clock, down, field
   position, and sprint energy.
-- Split and Sweep are runs with different starting lanes. Slant and Cross have
-  two moving receivers. Choose a target and throw a bullet or lob behind the
-  snap line; control transfers to the receiver on a catch.
-- Two blockers engage the rush. Two other defenders cover receivers, close run
-  lanes, then pursue the carrier or pass destination. Defender movement remains
+- Split, Sweep, Counter, and Draw are runs with different lanes or blocking
+  duration. Slant, Cross, Go, Out, Post, and Screen offer three moving receivers.
+  After snapping, move the QB with the arrows to drop back or scramble. Hold
+  **Enter**, move a free crosshair with the arrows, then **release Enter** to
+  throw. Range and direction come from the point you choose, with a dotted guide.
+  Hold Shift when releasing for a lob. Ctrl cancels aiming. The QB stops moving
+  while aiming and the simulation slows to one-quarter speed; defenders still
+  close in. Release the snap key before beginning a fresh aiming hold.
+- Five offensive linemen and a fullback engage the front seven. Cornerbacks
+  cover routes while linebackers and a deep safety pursue the carrier or pass. Defender movement remains
   slower than player maximum speed; difficulty changes positioning and speed.
-- Passes lead routes. Range is limited by QB rating, and nearby pressure reduces
+- Throws go to your chosen landing point, with no receiver lock or automatic
+  leading. Any receiver within catch range can catch it; control then transfers
+  to that receiver. You must anticipate the route and lead the pass yourself.
+  Range is limited by QB rating, and nearby pressure reduces
   accuracy. Bullets can be intercepted throughout flight; lobs clear the rush
   but give coverage more time, becoming interceptable during their final quarter.
 - Shift provides a short sprint that drains energy; release it to recover energy.
@@ -114,7 +164,7 @@ arcade cap model, not an implementation of NFL collective-bargaining rules.
 | Context | Keys | Action |
 |---|---|---|
 | Menus | Up / Down, Enter | Select / confirm |
-| Team selection | Up / Down, Enter | Choose one of eight clubs |
+| Team selection | Up / Down, Enter | Choose one of 32 clubs |
 | Play calling | Up / Down, Enter | Pick play / snap |
 | Play calling | Ctrl | Open Special Teams |
 | Special Teams | Up / Down, Enter | Choose Punt / Field Goal and start meter |
@@ -122,15 +172,18 @@ arcade cap model, not an implementation of NFL collective-bargaining rules.
 | Kick meter | Enter | Stop near center and kick |
 | Live play | Arrows / touchpad arrows | Move carrier |
 | Live play | Shift + movement | Sprint while energy lasts |
-| Pass play | Ctrl | Select receiver 1 or 2 |
-| Pass play | Enter | Bullet pass |
-| Pass play | Shift + Enter | Lob pass |
+| Pass play | Hold Enter + arrows | Aim the landing point |
+| Aiming | Release Enter | Throw a bullet |
+| Aiming | Shift + release Enter | Throw a lob |
+| Aiming | Ctrl | Cancel and resume QB movement |
 | Match | Esc | Pause; freezes the complete match state |
 | Result / quarter break | Enter | Continue |
 | Opponent possession | Enter | Advance next snap / continue |
-| Roster | Enter | Open selected player management |
+| Roster | Enter / Ctrl | Manage player / browse free agents |
+| Free agents / draft | Up / Down, Enter | Inspect player and confirm signing / pick |
 | Player management | Up / Down, Enter | Train, sign, renew, release, or recover team |
-| Schedule / standings | Left / Right or Enter | Switch pages |
+| League screens | Left / Right or Enter | Switch schedule, standings, bracket, scores |
+| League screens | Up / Down | Change page or week |
 | Settings | Left / Right or Enter | Change selected setting |
 | Other menus | Esc | Return |
 
@@ -143,14 +196,24 @@ if storage is unavailable.
 
 ## Saves
 
-Save format 2 automatically imports format-1 (`v1.0.0`) careers, including live
-passes and match clocks. Existing six players retain their progress and receive
-10M, two-season contracts; a rating-60 kicker receives an 8M contract. Migrated
-payroll is 68M regardless of previous player ratings, so no player is removed to
-meet the cap. Future renewals use normal salary quotes. Previously awarded
-`v1.0.0` automatic extra points are not awarded again. New saves include all
-contracts and the exact kick-meter state. `v1.0.0` cannot read format-2 saves;
-back up both original slots before returning to that older version.
+Save format 4 imports **v1.0.0, v1.1.0, and earlier v1.2.0 preview careers**. Existing progress, contracts,
+clocks, passes, and kick meters are retained. An existing eight-team season
+finishes its original seven-week schedule and old championship rules; the next
+season expands to all 32 teams and the new playoffs. The currently suspended
+legacy match retains its smaller units; subsequent matches use full units.
+
+The cap expands to 200M. Five added roles begin as free rating-40 reserves,
+without removing or charging for existing stars. Format-1 careers receive the
+same six 10M contracts and 8M kicker used by the previous migration; previously
+awarded automatic extra points are not repeated. Existing careers keep their roster rather than being reset to three stars.
+New saves preserve all twelve roles, free-agent availability, draft board/picks,
+weekly scores, playoff seeds/results, shootouts, and an aimed pass. A pass already
+in flight in an older save finishes using its original target rules. After
+resuming an aimed pass, hold Enter again to arm the throw; the menu confirmation
+cannot accidentally launch it. Older versions
+cannot read format-4 saves; back up both original slots before upgrading if you
+might return to an older version. Historical scores for other teams were not
+stored in older saves and remain unavailable for already completed legacy weeks.
 
 The game uses two small, versioned, checksummed files **beside the executable**:
 `nspire-retro-save0.tns` and `nspire-retro-save1.tns`. These are data files; launch
@@ -201,9 +264,10 @@ directory; calculator saves live beside the installed program.
 src/main.c       Ndless startup, filesystem setup, loop, save I/O, clean exit
 src/app.h/.c     Menus, pause, career/match transitions, exactly-once results
 src/game.h/.c    On-field play, opponent snaps, match clock, scoring, football AI
-src/season.h/.c  NFL team identifiers, schedule, standings, roster, progression
+src/season.h/.c  32 teams, schedules, standings, playoffs, roster, progression
 src/save.h/.c    Versioned serialization, validation, alternating save slots
 src/input.h/.c   Held movement and key-press edges
+website/dist/   Static landing page, styles, team filters, actual renderer image
 src/render.h/.c  Clipped RGB565 graphics, menus, HUD, sprite and ball animations
 ```
 
@@ -228,13 +292,16 @@ make check
 ```
 
 Requires a host C99 compiler with AddressSanitizer and UndefinedBehaviorSanitizer.
-The suite covers football rules; run/pass/catch/interception/pressure/range;
-blocking, coverage, stamina and difficulty effects; 100,000 simulation ticks;
-all eight round-robin schedules; roster economics and progression; pause/input
-edges; quarters/halftime/final scores; kick timing, touchbacks, returns, missed
-kicks, buzzer extra points, cap-safe transactions, renewal/expiry, and migration
-of a fixture produced by the actual `v1.0.0` encoder; save round trips and damaged-slot recovery;
-and **two complete seven-game seasons through the public app state machine**.
+The suite covers three-star generation across 300 seeds, free-agent availability,
+draft picks/contracts, aim pause/resume, and old-save imports; football rules; all six passes with three targets;
+blocking, coverage, stamina and difficulty; 100,000 simulation ticks;
+32 symmetric 17-week schedules; cap-safe roster transactions and contracts;
+quarters, halftime, kicks, and buzzer extra points; and migration of fixtures
+produced by the actual v1.0.0 and v1.1.0 encoders. Each of the 32 clubs is tested
+through qualification, a first-seed bye, reseeding, playoff shootouts, and a TI
+Bowl win, with exact save round trips at each stage. It also covers elimination,
+damaged-slot recovery, and **two complete seasons through the public app state
+machine**.
 It also renders every menu with clipping checks and writes 320x240 PPM previews
 in `build/`. Host stubs are never included in calculator builds.
 
@@ -253,3 +320,16 @@ SDK references:
 [LCD](https://github.com/ndless-nspire/Ndless/blob/master/ndless-sdk/libndls/lcd_blit.cpp),
 [relative paths](https://github.com/ndless-nspire/Ndless/blob/master/ndless-sdk/libndls/enable_relative_paths.c),
 [time implementation](https://github.com/ndless-nspire/Ndless/blob/master/ndless-sdk/libsyscalls/stdlib.cpp).
+
+## Landing page
+
+The landing page lives in `website/dist/` with no build dependencies. Preview it:
+
+```sh
+python3 -m http.server 4173 --directory website/dist
+```
+
+Open `http://127.0.0.1:4173/`. It includes all 32 teams with conference filters,
+playbook and career details, and installation instructions. Its screenshot comes
+from the game's actual RGB565 renderer. The page labels v1.2.0 as a preview while
+the version is awaiting merge/release; the latest-release link remains separate.
