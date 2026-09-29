@@ -234,6 +234,15 @@ at the title with no loaded career. New Career asks before replacing progress.
 
 ## Build and sideload
 
+### Continuous integration
+
+Every push and pull request targeting `main` runs the host test suite and
+sanitizer-backed syntax checks. The workflow also validates the landing page,
+repository metadata, and generated renderer previews. The Ndless calculator
+build is available as an opt-in job when the repository variable
+`NSPIRE_TOOLCHAIN_ENABLED` is set to `true`; standard GitHub runners do not
+include `nspire-gcc` or the Ndless packaging tools.
+
 Install a current [official Ndless SDK and ARM toolchain](https://github.com/ndless-nspire/Ndless/wiki/Ndless-SDK:-C-and-assembly-development-introduction)
 with the modern LCD-blit API and CX II support, then add its tools to PATH:
 

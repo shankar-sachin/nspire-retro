@@ -1,23 +1,65 @@
-name: C/C++ CI
+name: Nspire Retro CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-
+  host-check:
+    name: Host tests and sanitizer checks
     runs-on: ubuntu-latest
-
+    timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
-    - name: configure
-      run: ./configure
-    - name: make
-      run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install host toolchain
+        run: sudo apt-get update && sudo apt-get install --yes clang make
+      - name: Run gameplay, app, renderer, and save tests
+        run: make check HOST_CC=clang
+      - name: Check generated test artifacts
+        run: |
+          test -s build/play-call.ppm
+          test -s build/field.ppm
+          test -s build/title.ppm
+      - name: Upload renderer previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-previews
+          path: build/*.ppm
+          if-no-files-found: warn
+
+  source-audit:
+    name: Source and workflow audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Verify repository metadata
+        run: |
+          test -f Makefile
+          test -f README.md
+          test -f website/.openai/hosting.json
+          grep -q 'TEAM_COUNT 32' src/season.h
+          grep -q 'PLAY_COUNT 10' src/game.h
+      - name: Validate landing-page JavaScript
+        run: node --check website/dist/app.js
+      - name: Check whitespace
+        run: git diff --check
+
+  ndless-build:
+    name: Ndless build (when toolchain is available)
+    runs-on: ubuntu-latest
+    if: ${{ vars.NSPIRE_TOOLCHAIN_ENABLED == 'true' }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Build calculator program
+        run: make
