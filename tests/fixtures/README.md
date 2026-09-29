@@ -20,3 +20,8 @@ unchanged format-2 writer. A SEA career won week one 21–14, started week two,
 selected a punt, and advanced its meter eleven idle frames before saving.
 Tests preserve its contracts, result, exact kick timing, and eight-team schedule,
 then finish that legacy season and expand the following season to 32 teams.
+
+`v3-champion.bin` was written by the unmodified v1.2.0 preview encoder at commit
+9911640 during the recorded walkthrough. It contains a completed SEA championship
+and twelve stars. Format-4 migration retains those stars and the trophy instead
+of applying the three-star rule retroactively.

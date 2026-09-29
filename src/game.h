@@ -53,12 +53,16 @@ typedef struct {
     bool pending_pat, kick_touchback;
     bool postseason, bowl_game, shootout_active, legacy_units, cpu_pass;
     int shootout_round;
+    Actor aim;
+    bool aiming, legacy_flight;
+    int aim_tick;
     uint32_t rng;
 } Game;
 void game_init(Game *g);
 void game_start(Game *g, int quarter_seconds, int difficulty, const int ratings[ROSTER_COUNT], int opponent_rating, uint32_t seed);
 void game_kick(Game *g, bool field_goal);
 void game_update(Game *g, const Input *input);
+int game_throw_range(const Game *g);
 int game_yards_to_go(const Game *g);
 int game_defender_count(const Game *g);
 int game_receiver_count(const Game *g);

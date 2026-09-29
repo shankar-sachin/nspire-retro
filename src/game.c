@@ -54,6 +54,7 @@ static void formation(Game *g) {
     g->support[0] = (Actor){g->spot - (pass_play(g) ? 7 : 18) * FP, (pass_play(g) ? 100 : 76) * FP};
     g->support[1] = (Actor){g->spot - 14 * FP, 52 * FP};
     g->ball = g->carrier;
+    g->aim = g->carrier; g->aiming = g->legacy_flight = false; g->aim_tick = 0;
     g->ticks = g->flight_ticks = 0;
     g->in_flight = g->passed = g->lob = false;
     g->caught_receiver = -1; g->target = 0;
@@ -82,7 +83,7 @@ static void finish(Game *g, Result reason, bool incomplete) {
     g->last_gain = (end - g->spot) / YARD;
     if (g->caught_receiver >= 0) g->passing_yards += g->last_gain;
     else if (!incomplete) g->rushing_yards += g->last_gain;
-    g->result = reason; g->phase = PHASE_RESULT; g->in_flight = false;
+    g->result = reason; g->phase = PHASE_RESULT; g->in_flight = g->aiming = false;
     /* Compact huddle/runoff keeps human and simulated possessions on comparable clocks.
        The clock stops after incompletions, scores and out-of-bounds plays. */
     if (!incomplete && reason != RESULT_BOUNDS && end > 0 && end < GOAL)
@@ -209,23 +210,28 @@ static void route_step(const Game *g, Actor *a, int index) {
     a->x = clamp(a->x + speed, 0, GOAL + 8 * FP);
     a->y = clamp(a->y + dy, 10 * FP, (FIELD_WIDTH - 10) * FP);
 }
+int game_throw_range(const Game *g) { return (22 + g->ratings[ROLE_QB] / 3) * YARD; }
+static void limit_aim(Game *g) {
+    g->aim.x = clamp(g->aim.x, g->carrier.x + FP, GOAL + 8 * FP);
+    g->aim.y = clamp(g->aim.y, 4 * FP, (FIELD_WIDTH - 4) * FP);
+    int dx = g->aim.x - g->carrier.x, dy = g->aim.y - g->carrier.y;
+    int distance = abs_i(dx) + abs_i(dy) / 2, range = game_throw_range(g);
+    if (distance > range) {
+        g->aim.x = g->carrier.x + (int)((int64_t)dx * range / distance);
+        g->aim.y = g->carrier.y + (int)((int64_t)dy * range / distance);
+    }
+}
 static void throw_ball(Game *g, bool lob) {
     g->passed = g->in_flight = true; g->lob = lob; ++g->pass_attempts;
+    g->aiming = false; g->legacy_flight = false; g->aim_tick = 0;
     g->flight_ticks = 0; g->flight_duration = lob ? 24 : PASS_TICKS;
     g->throw_start = g->carrier; g->ball = g->throw_start;
-    g->throw_target = g->receivers[g->target];
-    for (int i = 0; i < g->flight_duration; ++i) route_step(g, &g->throw_target, g->target);
-    /* Arm strength limits range. Beyond it, the throw falls short. */
-    int range = (22 + g->ratings[ROLE_QB] / 3) * YARD;
-    int distance = abs_i(g->throw_target.x - g->throw_start.x) + abs_i(g->throw_target.y - g->throw_start.y) / 2;
-    if (distance > range) {
-        g->throw_target.x = g->throw_start.x + (int)((int64_t)(g->throw_target.x - g->throw_start.x) * range / distance);
-        g->throw_target.y = g->throw_start.y + (int)((int64_t)(g->throw_target.y - g->throw_start.y) * range / distance);
-    }
-    /* Pressure creates a visible, deterministic error rather than random drops. */
+    limit_aim(g); g->throw_target = g->aim;
+    /* The chosen point stays fixed. Receivers must reach it; no auto-leading. */
     for (int i = 0; i < game_defender_count(g); ++i)
         if (close_to(g->carrier, g->defenders[i], 18)) {
-            g->throw_target.y += (g->target ? 1 : -1) * (20 - g->ratings[ROLE_QB] / 8) * FP; break;
+            g->throw_target.y += (g->aim.y < g->carrier.y ? -1 : 1) * (20 - g->ratings[ROLE_QB] / 8) * FP;
+            break;
         }
 }
 static bool crosses(Actor from, Actor to, Actor defender) {
@@ -319,10 +325,26 @@ void game_update(Game *g, const Input *in) {
         }
         return;
     }
+    bool aim_frame = g->aiming;
+    if (pass_play(g) && !g->passed && g->carrier.x <= g->spot) {
+        if (in->action_pressed && !g->aiming) {
+            g->aiming = true; g->aim_tick = 0;
+            g->aim = (Actor){g->carrier.x + 20 * YARD, g->carrier.y};
+        }
+        aim_frame = g->aiming;
+        if (g->aiming && in->target_pressed) { g->aiming = false; g->aim_tick = 0; }
+        else if (g->aiming) {
+            g->aim.x += clamp(in->dx, -1, 1) * 3 * FP;
+            g->aim.y += clamp(in->dy, -1, 1) * 3 * FP;
+            limit_aim(g);
+            /* Four-times slow motion while aiming; input remains responsive. */
+            if (!in->action_released) { g->aim_tick = (g->aim_tick + 1) % 4; if (g->aim_tick) return; }
+        }
+    }
     ++g->ticks;
     if (g->clock_ticks > 0) --g->clock_ticks;
     if (!g->in_flight) {
-        int dx = clamp(in->dx, -1, 1), dy = clamp(in->dy, -1, 1);
+        int dx = aim_frame ? 0 : clamp(in->dx, -1, 1), dy = aim_frame ? 0 : clamp(in->dy, -1, 1);
         int role = g->caught_receiver >= 0 ? game_receiver_role(g->caught_receiver) : (pass_play(g) ? ROLE_QB : ROLE_RB);
         int speed = PLAYER_SPEED + (g->ratings[role] - 65) * 2;
         if (in->boost && g->energy >= 3 && (dx || dy)) { speed += 128; g->energy -= 3; }
@@ -339,8 +361,7 @@ void game_update(Game *g, const Input *in) {
     defense_step(g);
     bool launched = false;
     if (pass_play(g) && !g->passed) {
-        if (in->target_pressed) g->target = (g->target + 1) % game_receiver_count(g);
-        if (in->action_pressed && g->carrier.x <= g->spot) { throw_ball(g, in->boost); launched = true; }
+        if (g->aiming && in->action_released && g->carrier.x <= g->spot) { throw_ball(g, in->boost); launched = true; }
     }
     if (g->in_flight && !launched) {
         Actor previous = g->ball;
@@ -351,10 +372,17 @@ void game_update(Game *g, const Input *in) {
             for (int d = 0; d < game_defender_count(g); ++d)
                 if (crosses(previous, g->ball, g->defenders[d])) { finish(g, RESULT_INTERCEPTION, true); return; }
         if (t >= g->flight_duration) {
-            int radius = 7 + g->ratings[game_receiver_role(g->target)] / 16;
-            if (close_to(g->ball, g->receivers[g->target], radius)) {
-                g->carrier = g->receivers[g->target]; g->caught_receiver = g->target;
-                g->in_flight = false; ++g->completions;
+            int caught = -1, nearest = 1000000;
+            for (int i = 0; i < game_receiver_count(g); ++i) {
+                if (g->legacy_flight && i != g->target) continue;
+                int radius = 7 + g->ratings[game_receiver_role(i)] / 16;
+                int dx = (g->ball.x - g->receivers[i].x) / FP, dy = (g->ball.y - g->receivers[i].y) / FP;
+                int distance = dx * dx + dy * dy;
+                if (distance <= radius * radius && distance < nearest) { caught = i; nearest = distance; }
+            }
+            if (caught >= 0) {
+                g->carrier = g->receivers[caught]; g->caught_receiver = caught;
+                g->in_flight = false; g->legacy_flight = false; ++g->completions;
                 if (g->carrier.x >= GOAL) { finish(g, RESULT_TOUCHDOWN, false); return; }
             } else { finish(g, RESULT_INCOMPLETE, true); return; }
         }

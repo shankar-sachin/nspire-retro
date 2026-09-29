@@ -6,6 +6,10 @@
 #define YARD (PX_PER_YARD * FP)
 static const Input action = {.action_pressed = true};
 static const Input idle = {0};
+static void staff(Season *s) {
+    for (int i = 0; i < ROSTER_COUNT; ++i) s->roster[i] = (Player){i,60+i%3*3,0,100,season_salary(60+i%3*3,i),2};
+}
+static void finish_draft(Season *s) { while (s->draft_active) season_skip_pick(s); }
 static void test_schedule(void) {
     for (int team = 0; team < TEAM_COUNT; ++team) {
         unsigned seen = 0; int same = 0, cross = 0;
@@ -23,7 +27,7 @@ static void test_schedule(void) {
     assert(!strcmp(season_team_abbr(2), "SEA"));
 }
 static void test_progression(void) {
-    Season s; season_init(&s, 2);
+    Season s; season_init(&s, 2); staff(&s);
     assert(season_train(&s, ROLE_QB)); assert(s.roster[0].rating == 62 && s.credits == 14);
     assert(season_recover(&s)); assert(s.credits == 9 && s.roster[0].condition == 100);
     assert(!season_recover(&s)); assert(!season_recruit(&s, ROLE_QB));
@@ -43,7 +47,7 @@ static void test_progression(void) {
     credits = s.credits; season_record(&s, 7, 0); season_simulate_round(&s); assert(s.credits == credits);
     season_next(&s); assert(s.week == 0 && s.year == 2 && s.trophies == 1 && s.credits == credits);
     for (int i = 0; i < ROSTER_COUNT; ++i) assert(s.roster[i].condition == 100);
-    season_record(&s, 7, 7); assert(s.table[2].ties == 1);
+    finish_draft(&s); season_record(&s, 7, 7); assert(s.table[2].ties == 1);
 }
 static void test_clock_and_cpu(void) {
     Game g; game_init(&g);
@@ -140,13 +144,18 @@ static void test_full_seasons(void) {
             }
             assert(save_write(&a, "build/test-save"));
         }
-        app_update(&a, &action); assert(a.season.week == 0);
+        app_update(&a, &action); assert(a.season.week == 0 && a.screen == SCREEN_DRAFT);
+        while (a.season.draft_active) {
+            a.selection = ROSTER_COUNT; app_update(&a, &action); a.selection = 1; app_update(&a, &action);
+        }
+        assert(a.screen == SCREEN_HUB);
     }
     assert(a.season.year == 3);
     remove_saves();
 }
 static void test_contracts(void) {
-    Season s; season_init(&s, 0); s.credits = 200;
+    Season s; season_init(&s, 0); staff(&s); s.credits = 200;
+    s.free_agents[ROLE_QB].rating = 66; s.free_agents[ROLE_QB].salary = 17;
     assert(season_payroll(&s) <= SALARY_CAP);
     for (int i = 0; i < ROSTER_COUNT; ++i) { s.roster[i].salary = 16; s.roster[i].years = 2; }
     s.roster[ROLE_K].salary = 24; /* Exactly 200M. */
@@ -285,10 +294,63 @@ static void test_v2_migration(void) {
     while (a.season.week < 7) season_record(&a.season, 28, 0);
     assert(a.season.stage == STAGE_COMPLETE); roundtrip(&a);
     season_next(&a.season); assert(a.season.league_size == 32 && a.season.week == 0 && a.season.year == 2);
-    app_start_match(&a); assert(!a.game.legacy_units); roundtrip(&a); remove_saves();
+    finish_draft(&a.season); app_start_match(&a); assert(!a.game.legacy_units); roundtrip(&a); remove_saves();
+}
+static void test_roster_building(void) {
+    unsigned positions = 0;
+    for (unsigned seed = 1; seed <= 300; ++seed) {
+        Season s, same; season_init_seed(&s, 2, seed); season_init_seed(&same, 2, seed);
+        assert(!memcmp(&s, &same, sizeof(s)) && season_star_count(&s) == 3);
+        for (int r = 0; r < ROSTER_COUNT; ++r) {
+            if (s.roster[r].years) { positions |= 1u << r; assert(season_stars(&s.roster[r]) >= 1 && season_stars(&s.roster[r]) <= 10); }
+            else assert(s.roster[r].salary == 0 && season_stars(&s.roster[r]) == 0);
+        }
+    }
+    assert(positions == (1u << ROSTER_COUNT) - 1);
+    remove_saves(); App a; app_init(&a); a.has_career = true; a.season.credits = 100;
+    int empty = 0; while(a.season.roster[empty].years) ++empty;
+    Player prospect = a.season.free_agents[empty]; int fee = season_recruit_cost(&a.season, empty);
+    a.screen = SCREEN_FREE_AGENTS; a.selection = season_roster_row(empty);
+    app_update(&a, &action); assert(a.screen == SCREEN_SIGN);
+    a.selection = 1; app_update(&a, &action);
+    assert(season_star_count(&a.season) == 4 && !memcmp(&prospect, &a.season.roster[empty], sizeof(Player)));
+    assert(a.season.credits == 100 - fee); roundtrip(&a);
+    Season before = a.season; assert(!season_recruit(&a.season, empty)); assert(!memcmp(&before, &a.season, sizeof(Season)));
+    for (int w = 0; w < SEASON_WEEKS; ++w) season_record(&a.season, 28, 0);
+    while(a.season.stage != STAGE_COMPLETE) {
+        if (season_current_opponent(&a.season) < 0) season_simulate_round(&a.season); else season_record(&a.season, 28, 0);
+    }
+    season_next(&a.season); assert(a.season.draft_active && a.season.draft_picks == 3);
+    before = a.season; season_next(&a.season); assert(!memcmp(&before, &a.season, sizeof(Season)));
+    app_start_match(&a); assert(!a.match_active); roundtrip(&a);
+    for (int pick = 0; pick < 3; ++pick) {
+        empty = 0; while(a.season.roster[empty].years) ++empty;
+        a.screen = SCREEN_DRAFT; a.selection = season_roster_row(empty); app_update(&a, &action);
+        int credits = a.season.credits; a.selection = 1; app_update(&a, &action);
+        assert(a.season.draft_picks == 2 - pick && a.season.credits == credits);
+        assert(a.season.roster[empty].salary == a.season.prospects[empty].salary); roundtrip(&a);
+    }
+    assert(!a.season.draft_active && season_star_count(&a.season) == 7 && a.screen == SCREEN_HUB);
+    app_start_match(&a); assert(a.match_active); a.game.selected_play = PASS_GO;
+    app_update(&a, &action); app_update(&a, &(Input){.action_pressed=true,.action_held=true});
+    assert(a.game.aiming); app_update(&a, &(Input){.dx=1,.dy=-1,.action_held=true}); roundtrip(&a);
+    Game aiming = a.game; app_update(&a, &(Input){.quit=true}); app_update(&a, &idle);
+    assert(!memcmp(&aiming, &a.game, sizeof(Game))); roundtrip(&a);
+    app_update(&a, &action); assert(a.aim_rearm);
+    app_update(&a, &(Input){.action_released=true}); assert(a.game.aiming && !a.game.passed);
+    app_update(&a, &(Input){.action_pressed=true,.action_held=true}); assert(!a.aim_rearm);
+    app_update(&a, &(Input){.action_released=true}); assert(a.game.in_flight);
+    remove_saves();
+}
+static void test_v3_migration(void) {
+    remove_saves(); FILE *src = fopen("tests/fixtures/v3-champion.bin", "rb"), *dst = fopen("build/test-save1.tns", "wb"); assert(src && dst);
+    int byte; while ((byte = fgetc(src)) != EOF) fputc(byte, dst); fclose(src); fclose(dst);
+    App a; assert(save_load(&a, "build/test-save"));
+    assert(a.season.stage == STAGE_COMPLETE && a.season.trophies == 1 && season_star_count(&a.season) == 12);
+    roundtrip(&a); remove_saves();
 }
 int main(void) {
-    test_playoffs(); test_v2_migration(); test_contracts(); test_special_teams(); test_v1_migration(); test_schedule(); test_progression(); test_clock_and_cpu(); test_menus_pause(); test_saves(); test_full_seasons();
+    test_roster_building(); test_v3_migration(); test_playoffs(); test_v2_migration(); test_contracts(); test_special_teams(); test_v1_migration(); test_schedule(); test_progression(); test_clock_and_cpu(); test_menus_pause(); test_saves(); test_full_seasons();
     puts("32-team schedules, progression, match clocks, menus, save recovery, and two full seasons passed.");
     return 0;
 }

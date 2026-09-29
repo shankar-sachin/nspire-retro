@@ -32,6 +32,13 @@ The clubhouse has four league tabs: your schedule, conference standings, playoff
 bracket, and every week's scores. Left/Right switches tabs; Up/Down changes pages
 or the selected week.
 
+New careers start with **exactly three star players**, randomly assigned to three
+different positions. The other positions use free, rating-40 reserves. You can
+build up to **twelve stars** through free agency and the offseason draft. Every
+named player has a visible **0.5–5.0 star rating** derived from their ability;
+reserves display 0.0 stars. New-career seeds use launch time and menu timing, while
+saved careers keep their exact generated boards and roster.
+
 **Twelve star slots** sit within complete on-field units. Every new match has 11
 offensive players (QB, RB, two WRs, TE, five offensive linemen, and a fullback)
 and 11 defenders (four defensive linemen, three linebackers, three cornerbacks,
@@ -56,14 +63,17 @@ simulation, with DL/LB/DB ratings weighted differently for runs and passes.
 Wins earn 14 credits and five XP per player; losses/ties earn nine credits and
 three XP. Ten XP increases a rating by one. Training costs six credits for two
 rating points and five fitness. Team recovery costs five credits and restores
-25 fitness. Recruiting replaces the selected player with the displayed weekly
-prospect, resetting that slot's XP and restoring fitness. Low fitness reduces
+25 fitness. Free agency offers a generated candidate at each position. Inspect their stars,
+salary, and credit fee, then confirm the signing. Signing fills an empty star
+slot or replaces your star at that position; each candidate can be signed only
+once. The board refreshes after a completed match. Reopening menus or reloading
+a save does not reroll it. Low fitness reduces
 effective ratings; ratings cap at 95. Rosters are locked while a match is active.
 
 ### Salaries and contracts
 
 The twelve-player roster has a **200M salary cap**, separate from coach credits.
-New careers use 138M. The roster shows each player's annual cap charge, remaining
+Starting payroll depends on your three generated stars. The roster shows each player's annual cap charge, remaining
 contract years, total payroll, and available room. Enter opens that player's
 management screen with training, recruiting, renewal, release, and team recovery.
 
@@ -73,7 +83,16 @@ nor credits. Recruit signing costs remain coach credits; renewing costs three
 credits. Salaries stay fixed during a contract, even when training or XP improves
 the player. Renewals use the player's current rating and role to set a new salary.
 
-Starting a new season reduces remaining contract years by one. Expired players
+After the championship, **Start Offseason Draft** advances the year, reduces
+remaining contracts by one, and opens a saved draft board before week one. There
+are **three rounds with one pick each**. Select a prospect, inspect their stars
+and two-season rookie salary, and confirm. Draft picks cost no coach credits but
+must fit the cap. You can replace a current star or fill a reserve position.
+A prospect is selectable once per draft. Passing a pick requires confirmation;
+leaving the screen preserves it. All three picks must be used or passed before
+playing the new season. Returning to the draft cannot age contracts again.
+
+Starting the offseason reduces remaining contract years by one. Expired players
 become free rating-40 reserves, so the team always remains playable. Release also
 replaces a player with a reserve and clears the salary, after an in-app confirmation.
 There is no dead-money penalty or release credit refund. Reserves cannot train,
@@ -98,12 +117,20 @@ arcade cap model, not an implementation of NFL collective-bargaining rules.
   the first-down target. The HUD shows both scores, quarter, clock, down, field
   position, and sprint energy.
 - Split, Sweep, Counter, and Draw are runs with different lanes or blocking
-  duration. Slant, Cross, Go, Out, Post, and Screen offer three moving targets. Choose a target and throw a bullet or lob behind the
-  snap line; control transfers to the receiver on a catch.
+  duration. Slant, Cross, Go, Out, Post, and Screen offer three moving receivers.
+  After snapping, move the QB with the arrows to drop back or scramble. Hold
+  **Enter**, move a free crosshair with the arrows, then **release Enter** to
+  throw. Range and direction come from the point you choose, with a dotted guide.
+  Hold Shift when releasing for a lob. Ctrl cancels aiming. The QB stops moving
+  while aiming and the simulation slows to one-quarter speed; defenders still
+  close in. Release the snap key before beginning a fresh aiming hold.
 - Five offensive linemen and a fullback engage the front seven. Cornerbacks
   cover routes while linebackers and a deep safety pursue the carrier or pass. Defender movement remains
   slower than player maximum speed; difficulty changes positioning and speed.
-- Passes lead routes. Range is limited by QB rating, and nearby pressure reduces
+- Throws go to your chosen landing point, with no receiver lock or automatic
+  leading. Any receiver within catch range can catch it; control then transfers
+  to that receiver. You must anticipate the route and lead the pass yourself.
+  Range is limited by QB rating, and nearby pressure reduces
   accuracy. Bullets can be intercepted throughout flight; lobs clear the rush
   but give coverage more time, becoming interceptable during their final quarter.
 - Shift provides a short sprint that drains energy; release it to recover energy.
@@ -145,13 +172,15 @@ arcade cap model, not an implementation of NFL collective-bargaining rules.
 | Kick meter | Enter | Stop near center and kick |
 | Live play | Arrows / touchpad arrows | Move carrier |
 | Live play | Shift + movement | Sprint while energy lasts |
-| Pass play | Ctrl | Cycle WR1, WR2, or TE |
-| Pass play | Enter | Bullet pass |
-| Pass play | Shift + Enter | Lob pass |
+| Pass play | Hold Enter + arrows | Aim the landing point |
+| Aiming | Release Enter | Throw a bullet |
+| Aiming | Shift + release Enter | Throw a lob |
+| Aiming | Ctrl | Cancel and resume QB movement |
 | Match | Esc | Pause; freezes the complete match state |
 | Result / quarter break | Enter | Continue |
 | Opponent possession | Enter | Advance next snap / continue |
-| Roster | Enter | Open selected player management |
+| Roster | Enter / Ctrl | Manage player / browse free agents |
+| Free agents / draft | Up / Down, Enter | Inspect player and confirm signing / pick |
 | Player management | Up / Down, Enter | Train, sign, renew, release, or recover team |
 | League screens | Left / Right or Enter | Switch schedule, standings, bracket, scores |
 | League screens | Up / Down | Change page or week |
@@ -167,7 +196,7 @@ if storage is unavailable.
 
 ## Saves
 
-Save format 3 imports **v1.0.0 and v1.1.0 careers**. Existing progress, contracts,
+Save format 4 imports **v1.0.0, v1.1.0, and earlier v1.2.0 preview careers**. Existing progress, contracts,
 clocks, passes, and kick meters are retained. An existing eight-team season
 finishes its original seven-week schedule and old championship rules; the next
 season expands to all 32 teams and the new playoffs. The currently suspended
@@ -176,9 +205,13 @@ legacy match retains its smaller units; subsequent matches use full units.
 The cap expands to 200M. Five added roles begin as free rating-40 reserves,
 without removing or charging for existing stars. Format-1 careers receive the
 same six 10M contracts and 8M kicker used by the previous migration; previously
-awarded automatic extra points are not repeated. New saves preserve all twelve
-roles, weekly scores, playoff seeds/results, and shootout state. Older versions
-cannot read format-3 saves; back up both original slots before upgrading if you
+awarded automatic extra points are not repeated. Existing careers keep their roster rather than being reset to three stars.
+New saves preserve all twelve roles, free-agent availability, draft board/picks,
+weekly scores, playoff seeds/results, shootouts, and an aimed pass. A pass already
+in flight in an older save finishes using its original target rules. After
+resuming an aimed pass, hold Enter again to arm the throw; the menu confirmation
+cannot accidentally launch it. Older versions
+cannot read format-4 saves; back up both original slots before upgrading if you
 might return to an older version. Historical scores for other teams were not
 stored in older saves and remain unavailable for already completed legacy weeks.
 
@@ -259,7 +292,8 @@ make check
 ```
 
 Requires a host C99 compiler with AddressSanitizer and UndefinedBehaviorSanitizer.
-The suite covers football rules; all six passes with three targets;
+The suite covers three-star generation across 300 seeds, free-agent availability,
+draft picks/contracts, aim pause/resume, and old-save imports; football rules; all six passes with three targets;
 blocking, coverage, stamina and difficulty; 100,000 simulation ticks;
 32 symmetric 17-week schedules; cap-safe roster transactions and contracts;
 quarters, halftime, kicks, and buzzer extra points; and migration of fixtures

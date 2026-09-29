@@ -76,13 +76,45 @@ static void reset_results(Season *s) {
     for (int i = 0; i < 14; ++i) s->playoff_teams[i] = -1;
     for (int i = 0; i < 13; ++i) { s->playoff_winners[i] = -1; s->playoff_scores[i][0] = s->playoff_scores[i][1] = -1; }
 }
-void season_init(Season *s, int team) {
+int season_stars(const Player *p) {
+    if (!p->years) return 0;
+    int half = (p->rating - 35) / 6;
+    return half < 1 ? 1 : cap(half, 10);
+}
+int season_star_count(const Season *s) {
+    int total = 0;
+    for (int i = 0; i < ROSTER_COUNT; ++i) if (s->roster[i].years) ++total;
+    return total;
+}
+static Player candidate(Season *s, int role, bool rookie) {
+    int rating = (rookie ? 45 : 50) + (int)((roll(s) >> 16) % (rookie ? 36u : 41u));
+    int salary = season_salary(rating, role);
+    if (rookie) { salary = (salary + 1) / 2; if (salary < 4) salary = 4; }
+    return (Player){(int)((roll(s) >> 16) % 12), rating, 0, 100, salary, 2};
+}
+void season_refresh_agents(Season *s) {
+    s->free_signed = 0;
+    for (int i = 0; i < ROSTER_COUNT; ++i) s->free_agents[i] = candidate(s, i, false);
+}
+void season_init_seed(Season *s, int team, uint32_t seed) {
     memset(s, 0, sizeof(*s));
     s->league_size = TEAM_COUNT; s->salary_cap = SALARY_CAP;
-    s->team = team; s->year = 1; s->credits = 20; s->rng = 0x4e535052u + (uint32_t)team;
-    for (int i = 0; i < ROSTER_COUNT; ++i) s->roster[i] = (Player){i, 60 + i % 3 * 3, 0, 100, season_salary(60 + i % 3 * 3, i), 2};
-    reset_results(s);
+    s->team = team; s->year = 1; s->credits = 20; s->rng = seed ? seed : 1;
+    int positions[ROSTER_COUNT];
+    for (int i = 0; i < ROSTER_COUNT; ++i) {
+        positions[i] = i; s->roster[i] = (Player){i,40,0,100,0,0};
+    }
+    for (int i = ROSTER_COUNT - 1; i > 0; --i) {
+        int j = (int)((roll(s) >> 16) % (uint32_t)(i + 1));
+        int swap = positions[i]; positions[i] = positions[j]; positions[j] = swap;
+    }
+    for (int i = 0; i < 3; ++i) {
+        int role = positions[i], rating = 50 + (int)((roll(s) >> 16) % 26);
+        s->roster[role] = (Player){role,rating,0,100,season_salary(rating,role),2};
+    }
+    reset_results(s); season_refresh_agents(s);
 }
+void season_init(Season *s, int team) { season_init_seed(s, team, 0x4e535052u + (uint32_t)team); }
 static void record_pair(Season *s, int a, int b, int pa, int pb) {
     Standing *x = &s->table[a], *y = &s->table[b];
     x->points_for += pa; x->points_against += pb;
@@ -127,7 +159,7 @@ void season_bracket_pair(const Season *s, int game, int *a, int *b) {
 static int round_start(const Season *s) { return s->stage == STAGE_WILDCARD ? 0 : (s->stage == STAGE_DIVISIONAL ? 6 : (s->stage == STAGE_CONFERENCE ? 10 : 12)); }
 static int round_end(const Season *s) { return s->stage == STAGE_WILDCARD ? 6 : (s->stage == STAGE_DIVISIONAL ? 10 : (s->stage == STAGE_CONFERENCE ? 12 : 13)); }
 int season_current_opponent(const Season *s) {
-    if (s->stage == STAGE_COMPLETE) return -1;
+    if (s->stage == STAGE_COMPLETE || s->draft_active) return -1;
     if (s->stage == STAGE_REGULAR) return season_schedule_opponent(s, s->team, s->week);
     for (int i = round_start(s); i < round_end(s); ++i) {
         int a, b; season_bracket_pair(s, i, &a, &b);
@@ -178,6 +210,7 @@ void season_record(Season *s, int scored, int allowed) {
     int opponent = season_current_opponent(s);
     if (opponent < 0 || (s->stage != STAGE_REGULAR && scored == allowed)) return;
     reward(s, scored, allowed);
+    season_refresh_agents(s);
     if (s->stage != STAGE_REGULAR) { playoff_round(s, true, scored, allowed); return; }
     record_pair(s, s->team, opponent, scored, allowed);
     s->results[s->week][0] = scored; s->results[s->week][1] = allowed;
@@ -203,6 +236,19 @@ void season_next(Season *s) {
         s->roster[i].condition = 100;
         if (s->roster[i].years && --s->roster[i].years == 0) s->roster[i] = (Player){i, 40, 0, 100, 0, 0};
     }
+    s->draft_active = true; s->draft_picks = 3; s->draft_taken = 0;
+    for (int i = 0; i < ROSTER_COUNT; ++i) s->prospects[i] = candidate(s, i, true);
+    season_refresh_agents(s);
+}
+void season_skip_pick(Season *s) {
+    if (!s->draft_active || s->draft_picks <= 0) return;
+    if (--s->draft_picks == 0) s->draft_active = false;
+}
+bool season_draft(Season *s, int role) {
+    if (!s->draft_active || role < 0 || role >= ROSTER_COUNT || (s->draft_taken & (1u << role)) ||
+        !season_can_sign(s, role, s->prospects[role].salary)) return false;
+    s->roster[role] = s->prospects[role]; s->draft_taken |= 1u << role;
+    season_skip_pick(s); return true;
 }
 bool season_train(Season *s, int role) {
     Player *p = &s->roster[role];
@@ -218,16 +264,13 @@ bool season_recover(Season *s) {
     for (int i = 0; i < ROSTER_COUNT; ++i) s->roster[i].condition = cap(s->roster[i].condition + 25, 100);
     return true;
 }
-int season_recruit_rating(const Season *s, int role) {
-    return cap(66 + (s->year - 1) * 2 + (s->week * 3 + role * 7) % 13, 95);
-}
-int season_recruit_cost(const Season *s, int role) { return 15 + (season_recruit_rating(s, role) - 60) / 2; }
+int season_recruit_rating(const Season *s, int role) { return s->free_agents[role].rating; }
+int season_recruit_cost(const Season *s, int role) { return 10 + (season_recruit_rating(s, role) - 45) / 2; }
 bool season_recruit(Season *s, int role) {
+    if (role < 0 || role >= ROSTER_COUNT || (s->free_signed & (1u << role))) return false;
     int cost = season_recruit_cost(s, role);
-    int salary = season_salary(season_recruit_rating(s, role), role);
-    if (s->credits < cost || !season_can_sign(s, role, salary)) return false;
-    s->credits -= cost;
-    s->roster[role] = (Player){(role + 6 + s->week) % 12, season_recruit_rating(s, role), 0, 100, salary, 2};
+    if (s->credits < cost || !season_can_sign(s, role, s->free_agents[role].salary)) return false;
+    s->credits -= cost; s->roster[role] = s->free_agents[role]; s->free_signed |= 1u << role;
     return true;
 }
 

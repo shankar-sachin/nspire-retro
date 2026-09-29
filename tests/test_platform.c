@@ -31,8 +31,10 @@ int main(void) {
     input_init(); keys[KEY_NSPIRE_ENTER] = true;
     in = input_poll(); assert(!in.action_pressed); /* launch key is suppressed */
     keys[KEY_NSPIRE_ENTER] = false; input_poll();
-    keys[KEY_NSPIRE_ENTER] = true; in = input_poll(); assert(in.action_pressed);
+    keys[KEY_NSPIRE_ENTER] = true; in = input_poll(); assert(in.action_pressed && in.action_held);
     in = input_poll(); assert(!in.action_pressed);
+    keys[KEY_NSPIRE_ENTER] = false; in = input_poll(); assert(in.action_released && !in.action_held);
+    in = input_poll(); assert(!in.action_released);
     keys[KEY_NSPIRE_UPRIGHT] = true; in = input_poll(); assert(in.dx == 1 && in.dy == -1);
     keys[KEY_NSPIRE_CTRL] = true; in = input_poll(); assert(in.target_pressed);
     in = input_poll(); assert(!in.target_pressed);
@@ -92,6 +94,16 @@ int main(void) {
     app_start_match(&a); a.game.spot = 50 * PX_PER_YARD * FP;
     a.game.selected_play = PASS_POST; game_update(&a.game, &(Input){.action_pressed = true});
     capture = "build/ti-bowl.ppm"; render_app(&a);
+    game_update(&a.game, &(Input){.action_pressed=true,.action_held=true});
+    for (int i = 0; i < 8; ++i) game_update(&a.game, &(Input){.dx=1,.dy=-1,.action_held=true});
+    capture = "build/free-aim.ppm"; render_app(&a);
+    a.match_active = false; a.screen = SCREEN_FREE_AGENTS; a.selection = 0;
+    capture = "build/free-agents.ppm"; render_app(&a);
+    a.screen = SCREEN_SIGN; a.return_screen = SCREEN_FREE_AGENTS; a.roster_selection = ROLE_DB; a.selection = 1;
+    capture = "build/sign-agent.ppm"; render_app(&a);
+    season_record(&a.season, 28, 0); season_next(&a.season); a.screen = SCREEN_DRAFT; a.selection = 0;
+    capture = "build/draft.ppm"; render_app(&a);
+    a.selection = ROSTER_COUNT; render_app(&a);
     a.settings.animations = 0; render_app(&a);
     render_shutdown(); assert(!lcd_active && frames > 1100);
     puts("Input edges and rendering passed; previews written to build/*.ppm.");

@@ -1,7 +1,7 @@
 #include "save.h"
 #include <stdio.h>
 #include <string.h>
-#define SAVE_VERSION 3u
+#define SAVE_VERSION 4u
 #define SAVE_CAPACITY 8192
 /* Every scalar is explicitly serialized, independent of compiler padding and ABI. */
 #define GAME_FIELDS(X) \
@@ -76,6 +76,13 @@ static void encode(Buffer *b, const App *a, uint32_t sequence) {
     for (int w = 0; w < SEASON_WEEKS; ++w) for (int t = 0; t < TEAM_COUNT; ++t) put(b, (uint32_t)s->week_scores[w][t]);
     actor_put(b, g->support[0]); actor_put(b, g->support[1]);
     put(b, g->postseason); put(b, g->bowl_game); put(b, g->shootout_active); put(b, g->legacy_units); put(b, g->cpu_pass); put(b, (uint32_t)g->shootout_round);
+    for (int group = 0; group < 2; ++group) for (int i = 0; i < ROSTER_COUNT; ++i) {
+        const Player *p = group ? &s->prospects[i] : &s->free_agents[i];
+        put(b, (uint32_t)p->name); put(b, (uint32_t)p->rating); put(b, (uint32_t)p->xp);
+        put(b, (uint32_t)p->condition); put(b, (uint32_t)p->salary); put(b, (uint32_t)p->years);
+    }
+    put(b, s->free_signed); put(b, s->draft_taken); put(b, (uint32_t)s->draft_picks); put(b, s->draft_active);
+    actor_put(b, g->aim); put(b, g->aiming); put(b, g->legacy_flight); put(b, (uint32_t)g->aim_tick);
     uint32_t hash = checksum(b->data, b->pos); put(b, hash);
 }
 static bool range(int n, int lo, int hi) { return n >= lo && n <= hi; }
@@ -97,6 +104,15 @@ static bool valid(const App *a) {
         if (!range(g->ratings[i], 20, 95)) return false;
     }
     if (season_payroll(s) > s->salary_cap) return false;
+    if (s->free_signed >= (1u << ROSTER_COUNT) || s->draft_taken >= (1u << ROSTER_COUNT) ||
+        !range(s->draft_picks, 0, 3) || s->draft_active != (s->draft_picks > 0)) return false;
+    if (s->draft_active && (s->stage != STAGE_REGULAR || s->week != 0 || a->match_active)) return false;
+    for (int group = 0; group < 2; ++group) for (int i = 0; i < ROSTER_COUNT; ++i) {
+        const Player *p = group ? &s->prospects[i] : &s->free_agents[i];
+        if (group && !s->draft_active && p->years == 0 && p->rating == 0 && p->name == 0 && p->xp == 0 && p->condition == 0 && p->salary == 0) continue;
+        if (!range(p->name, 0, 11) || !range(p->rating, group ? 45 : 50, group ? 80 : 90) ||
+            p->xp != 0 || p->condition != 100 || !range(p->salary, 4, 40) || p->years != 2) return false;
+    }
     for (int i = 0; i < SEASON_WEEKS; ++i) for (int j = 0; j < 2; ++j)
         if (i < s->week ? !range(s->results[i][j], 0, 1000) : s->results[i][j] != -1) return false;
     for (int i = 0; i < TEAM_COUNT; ++i) {
@@ -143,6 +159,8 @@ static bool valid(const App *a) {
     if (g->phase == PHASE_SPECIAL && g->kick_kind == KICK_PAT) return false;
     if (g->pending_pat && (!g->new_drive || (g->phase != PHASE_RESULT && g->phase != PHASE_KICK))) return false;
     if (!range(g->shootout_round, 0, 1000) || (g->shootout_active && (!g->postseason || g->quarter != 4 || g->clock_ticks != 0 || g->shootout_round == 0 || (g->phase != PHASE_KICK && g->phase != PHASE_RESULT)))) return false;
+    if (!valid_actor(g->aim) || !range(g->aim_tick, 0, 3) ||
+        (g->aiming && (g->phase != PHASE_LIVE || g->passed || !game_is_pass(g->selected_play) || g->carrier.x > g->spot))) return false;
     if (!valid_actor(g->support[0]) || !valid_actor(g->support[1])) return false;
     if (!valid_actor(g->carrier) || !valid_actor(g->ball) || !valid_actor(g->throw_start) || !valid_actor(g->throw_target)) return false;
     for (int i = 0; i < RECEIVER_COUNT; ++i) if (!valid_actor(g->receivers[i])) return false;
@@ -228,6 +246,20 @@ static bool decode(Buffer *b, App *a) {
         if (postseason > 1 || bowl > 1 || shootout > 1 || legacy > 1 || pass > 1) return false;
         g->postseason = postseason; g->bowl_game = bowl; g->shootout_active = shootout; g->legacy_units = legacy; g->cpu_pass = pass;
         g->shootout_round = (int32_t)get(b);
+    }
+    if (version >= 4) {
+        for (int group = 0; group < 2; ++group) for (int i = 0; i < ROSTER_COUNT; ++i) {
+            Player *p = group ? &s->prospects[i] : &s->free_agents[i];
+            p->name = (int32_t)get(b); p->rating = (int32_t)get(b); p->xp = (int32_t)get(b);
+            p->condition = (int32_t)get(b); p->salary = (int32_t)get(b); p->years = (int32_t)get(b);
+        }
+        s->free_signed = get(b); s->draft_taken = get(b); s->draft_picks = (int32_t)get(b);
+        uint32_t draft = get(b); g->aim = actor_get(b); uint32_t aiming = get(b), legacy = get(b);
+        if (draft > 1 || aiming > 1 || legacy > 1) return false;
+        s->draft_active = draft; g->aiming = aiming; g->legacy_flight = legacy; g->aim_tick = (int32_t)get(b);
+    } else {
+        uint32_t rng = s->rng; season_refresh_agents(s); s->rng = rng;
+        g->legacy_flight = g->in_flight;
     }
     return b->ok && b->pos == end && valid(a);
 }

@@ -20,9 +20,19 @@ typedef struct {
     Player roster[ROSTER_COUNT];
     Standing table[TEAM_COUNT];
     int results[SEASON_WEEKS][2]; /* -1 means not played. */
+    Player free_agents[ROSTER_COUNT], prospects[ROSTER_COUNT];
+    uint32_t free_signed, draft_taken;
+    int draft_picks;
+    bool draft_active;
     uint32_t rng;
 } Season;
 void season_init(Season *s, int team);
+void season_init_seed(Season *s, int team, uint32_t seed);
+int season_star_count(const Season *s);
+int season_stars(const Player *p); /* Half-star units, 0 for reserves. */
+void season_refresh_agents(Season *s);
+bool season_draft(Season *s, int role);
+void season_skip_pick(Season *s);
 int season_roster_role(int row);
 int season_roster_row(int role);
 int season_regular_weeks(const Season *s);

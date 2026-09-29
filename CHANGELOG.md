@@ -2,6 +2,14 @@
 
 ## 1.2.0 (unreleased)
 
+- Replace receiver-lock throws with drop-back, hold-Enter aiming, a free landing
+  crosshair, and release-to-throw controls. Slow the simulation while aiming;
+  receivers catch by proximity rather than a selected target ID.
+- Start new careers with exactly three randomized stars. Show half-star ratings,
+  a persistent free-agent board, and a three-round offseason draft before week one.
+- Save format 4 preserves draft picks, boards, signings, and aimed passes, imports
+  previous saves without stripping their roster, and protects throws on resume.
+
 - Expand to all 32 NFL clubs, 17 custom regular-season weeks, conference standings,
   weekly league scores, and a 14-team postseason with top-seed byes and reseeding.
 - Add conference finals and the TI Bowl, championship rewards, elimination/bye
@@ -13,7 +21,7 @@
   receiving targets; add striped turf, hashes, crowd details, colored end zones,
   goalposts, and TI Bowl field markings.
 - Add paginated club/roster/league screens and a responsive static landing page.
-- Save format 3 retains v1.0.0/v1.1.0 careers and exact suspended matches. Existing
+- Import support retains v1.0.0/v1.1.0 careers and exact suspended matches. Existing
   eight-team seasons finish before expanding; new roster roles begin as reserves.
 - Validate every club's championship path, playoff saves/shootouts, old-save
   migration, all passing concepts, and complete seasons with host sanitizers.
